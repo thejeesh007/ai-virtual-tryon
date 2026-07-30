@@ -1,0 +1,41 @@
+# ==========================================================
+# AI-Powered Virtual Try-On System
+# Python Requirements
+# ==========================================================
+
+# ---------- Core ----------
+numpy
+scipy
+pandas
+matplotlib
+scikit-learn
+
+# ---------- Computer Vision ----------
+opencv-python
+mediapipe
+Pillow
+
+# ---------- Deep Learning ----------
+torch
+torchvision
+
+# ---------- 3D Processing ----------
+open3d
+trimesh
+smplx
+
+# ---------- Utilities ----------
+tqdm
+PyYAML
+joblib
+requests
+
+# ---------- Backend ----------
+fastapi
+uvicorn
+python-multipart
+pydantic
+
+# ---------- Development ----------
+jupyter
+ipykernel
