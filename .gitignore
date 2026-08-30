@@ -2,3 +2,15 @@ venv/
 .venv/
 __pycache__/
 *.pyc
+
+# BodyM dataset (public, re-downloadable via aws s3 --no-sign-request)
+data/bodym/
+
+# Real people's photos + anything derived from them (privacy)
+data/dataset/
+backend/measurement/bodym_output/
+backend/measurement/output/
+backend/measurement/hmr2_output/
+
+# Cloned external repo (its own .git, 500MB+); clone separately, don't vendor
+third_party/
