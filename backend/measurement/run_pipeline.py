@@ -86,6 +86,14 @@ def parse_args():
         help="Re-run reconstruction even if this person already has cached measurements.",
     )
 
+    parser.add_argument(
+        "--people",
+        type=str,
+        default="",
+        help="Comma-separated person folder names to restrict processing to, "
+             "e.g. person_001,person_002. Default: everyone found in data/dataset.",
+    )
+
     return parser.parse_args()
 
 
@@ -111,6 +119,17 @@ def parse_heights_arg(heights_arg):
 # DATASET DISCOVERY
 # =========================================================
 
+IMAGE_EXTS = [".png", ".jpg", ".jpeg", ".JPG", ".JPEG", ".PNG"]
+
+
+def find_image(person_dir, stem):
+    for ext in IMAGE_EXTS:
+        path = os.path.join(person_dir, f"{stem}{ext}")
+        if os.path.exists(path):
+            return path
+    return None
+
+
 def discover_people(dataset_dir):
 
     people = []
@@ -122,13 +141,13 @@ def discover_people(dataset_dir):
         if not os.path.isdir(person_dir):
             continue
 
-        front_path = os.path.join(person_dir, "front.png")
-        side_path = os.path.join(person_dir, "side.png")
+        front_path = find_image(person_dir, "front")
+        side_path = find_image(person_dir, "side")
 
-        if os.path.exists(front_path) and os.path.exists(side_path):
+        if front_path and side_path:
             people.append(name)
         else:
-            print(f"Skipping {name}: missing front.png/side.png")
+            print(f"Skipping {name}: missing front/side image (looked for {IMAGE_EXTS})")
 
     return people
 
@@ -357,6 +376,10 @@ def main():
 
     people = discover_people(DATASET_DIR)
 
+    if args.people:
+        wanted = {p.strip() for p in args.people.split(",") if p.strip()}
+        people = [p for p in people if p in wanted]
+
     if not people:
         print(f"No person_XXX folders with front.png + side.png found under {DATASET_DIR}")
         return
@@ -403,11 +426,11 @@ def main():
 
         for view in ["front", "side"]:
 
-            print(f"Reconstructing {person}/{view}.png ...")
+            view_path = find_image(person_dir, view)
+            print(f"Reconstructing {view_path} ...")
 
             raw_vertices, keypoints_3d = reconstruct(
-                model, model_cfg, device,
-                os.path.join(person_dir, f"{view}.png"),
+                model, model_cfg, device, view_path,
             )
 
             np.save(

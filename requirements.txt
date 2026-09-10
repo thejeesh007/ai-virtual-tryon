@@ -4,7 +4,7 @@
 # ==========================================================
 
 # ---------- Core ----------
-numpy
+numpy<2  # mediapipe requires numpy<2
 scipy
 pandas
 matplotlib

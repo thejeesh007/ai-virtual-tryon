@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>AI Virtual Try-On — Avatar Generator</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: system-ui, -apple-system, sans-serif;
+    background: #0e1116; color: #e6e6e6; display: flex; height: 100vh;
+  }
+  #panel {
+    width: 340px; padding: 24px; overflow-y: auto;
+    background: #161b22; border-right: 1px solid #2a2f38;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  h2 { font-size: 13px; margin: 24px 0 8px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.04em; }
+  p.sub { font-size: 12px; color: #8b949e; margin: 0 0 20px; }
+  label { display: block; font-size: 13px; margin: 12px 0 6px; color: #c9d1d9; }
+  input[type=file], input[type=number] {
+    width: 100%; padding: 8px; border-radius: 6px;
+    border: 1px solid #30363d; background: #0d1117; color: #e6e6e6; font-size: 13px;
+  }
+  button {
+    width: 100%; margin-top: 10px; padding: 10px; border-radius: 6px; border: none;
+    background: #2f81f7; color: white; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  button.secondary { background: #21262d; border: 1px solid #30363d; }
+  button:disabled { background: #30363d; cursor: not-allowed; }
+  #status { font-size: 13px; margin-top: 12px; color: #8b949e; min-height: 18px; }
+  #measurements { margin-top: 20px; font-size: 13px; }
+  #measurements table { width: 100%; border-collapse: collapse; }
+  #measurements td { padding: 4px 0; border-bottom: 1px solid #21262d; }
+  #measurements td:last-child { text-align: right; color: #7ee787; font-variant-numeric: tabular-nums; }
+  #viewer { flex: 1; position: relative; }
+  #hint { position: absolute; bottom: 16px; left: 16px; font-size: 12px; color: #6e7681; }
+
+  #qrBox {
+    background: #fff; padding: 12px; border-radius: 8px; display: flex;
+    justify-content: center; margin-top: 8px;
+  }
+  #sessionLink { font-size: 11px; word-break: break-all; color: #58a6ff; margin-top: 8px; display: block; }
+  #pollStatus { font-size: 12px; color: #8b949e; margin-top: 8px; }
+  .dot-pulse {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: #f0883e; margin-right: 6px; animation: pulse 1.2s infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 0.3; } 50% { opacity: 1; } }
+  hr { border: none; border-top: 1px solid #21262d; margin: 20px 0; }
+</style>
+</head>
+<body>
+
+<div id="panel">
+  <h1>Avatar Generator</h1>
+  <p class="sub">Front + side photo + height → predicted measurements + 3D avatar</p>
+
+  <h2>1. Capture on phone</h2>
+  <div id="qrArea">
+    <div id="qrBox"><div id="qrcode"></div></div>
+    <a id="sessionLink" href="#" target="_blank"></a>
+    <div id="pollStatus"><span class="dot-pulse"></span>Waiting for phone capture...</div>
+  </div>
+  <button class="secondary" id="newSessionBtn">New QR code</button>
+
+  <hr/>
+  <h2>Or test directly on this device</h2>
+  <label>Front photo</label>
+  <input type="file" id="frontFile" accept="image/*" />
+  <label>Side photo</label>
+  <input type="file" id="sideFile" accept="image/*" />
+  <label>Height (cm)</label>
+  <input type="number" id="heightInput" value="170" step="0.5" min="100" max="230" />
+  <button id="generateBtn">Generate Avatar</button>
+  <div id="status"></div>
+
+  <div id="measurements"></div>
+</div>
+
+<div id="viewer">
+  <div id="hint">Drag to rotate · scroll to zoom</div>
+</div>
+
+<script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script>
+const API_URL = "/api/generate";
+
+let scene, camera, renderer, controls, mesh, modestyMesh;
+
+// =========================================================
+// 3D viewer
+// =========================================================
+
+function initViewer() {
+  const container = document.getElementById("viewer");
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0e1116);
+
+  camera = new THREE.PerspectiveCamera(35, container.clientWidth / container.clientHeight, 0.1, 2000);
+  camera.position.set(0, 90, 260);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(container.clientWidth, container.clientHeight);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  container.appendChild(renderer.domElement);
+
+  controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 80, 0);
+  controls.enableDamping = true;
+
+  const key = new THREE.DirectionalLight(0xffffff, 1.0);
+  key.position.set(1, 1, 1);
+  scene.add(key);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.5);
+  fill.position.set(-1, 0.5, -1);
+  scene.add(fill);
+  scene.add(new THREE.AmbientLight(0x404050, 1.2));
+
+  scene.add(new THREE.GridHelper(300, 30, 0x30363d, 0x21262d));
+
+  window.addEventListener("resize", () => {
+    camera.aspect = container.clientWidth / container.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(container.clientWidth, container.clientHeight);
+  });
+
+  animate();
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+function showMesh(vertices, faces) {
+  if (mesh) {
+    scene.remove(mesh);
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(vertices.length * 3);
+  for (let i = 0; i < vertices.length; i++) {
+    positions[i * 3] = vertices[i][0];
+    positions[i * 3 + 1] = vertices[i][1];
+    positions[i * 3 + 2] = vertices[i][2];
+  }
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+
+  const indices = new Uint32Array(faces.length * 3);
+  for (let i = 0; i < faces.length; i++) {
+    indices[i * 3] = faces[i][0];
+    indices[i * 3 + 1] = faces[i][1];
+    indices[i * 3 + 2] = faces[i][2];
+  }
+  geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+  geometry.computeVertexNormals();
+
+  const material = new THREE.MeshStandardMaterial({
+    color: 0xd8a878, roughness: 0.7, metalness: 0.05, side: THREE.DoubleSide,
+  });
+
+  mesh = new THREE.Mesh(geometry, material);
+  scene.add(mesh);
+
+  let yMin = Infinity, yMax = -Infinity;
+  for (let i = 0; i < vertices.length; i++) {
+    yMin = Math.min(yMin, vertices[i][1]);
+    yMax = Math.max(yMax, vertices[i][1]);
+  }
+  controls.target.set(0, (yMin + yMax) / 2, 0);
+
+  addModestyGarment(vertices, yMin, yMax);
+}
+
+// Simple procedural "shorts" covering hip-to-upper-thigh, sized from this
+// specific avatar's own vertices (not a fixed generic shape) so it fits
+// bodies of different sizes without clipping or floating.
+function addModestyGarment(vertices, yMin, yMax) {
+  if (modestyMesh) {
+    scene.remove(modestyMesh);
+    modestyMesh.geometry.dispose();
+    modestyMesh.material.dispose();
+    modestyMesh = null;
+  }
+
+  const span = yMax - yMin;
+  const waistY = yMin + 0.58 * span;   // ~waist level
+  const thighY = yMin + 0.42 * span;   // ~upper-thigh level
+
+  let radiusAtWaist = 0, radiusAtThigh = 0;
+  const waistBand = 0.015 * span, thighBand = 0.015 * span;
+
+  for (let i = 0; i < vertices.length; i++) {
+    const [x, y, z] = vertices[i];
+    const r = Math.sqrt(x * x + z * z);
+    if (Math.abs(y - waistY) < waistBand) radiusAtWaist = Math.max(radiusAtWaist, r);
+    if (Math.abs(y - thighY) < thighBand) radiusAtThigh = Math.max(radiusAtThigh, r);
+  }
+
+  // Fall back to a reasonable guess if a band happened to catch no vertices.
+  if (radiusAtWaist === 0) radiusAtWaist = 0.09 * span;
+  if (radiusAtThigh === 0) radiusAtThigh = 0.11 * span;
+
+  const margin = 0.006 * span; // sit just outside the skin, not clipping through
+  const geometry = new THREE.CylinderGeometry(
+    radiusAtWaist + margin, radiusAtThigh + margin, waistY - thighY, 32, 4
+  );
+
+  const material = new THREE.MeshStandardMaterial({
+    color: 0x24262b, roughness: 0.85, metalness: 0.0, side: THREE.DoubleSide,
+  });
+
+  modestyMesh = new THREE.Mesh(geometry, material);
+  modestyMesh.position.set(0, (waistY + thighY) / 2, 0);
+  scene.add(modestyMesh);
+}
+
+function renderMeasurements(m) {
+  const order = [
+    "chest", "waist", "hip", "shoulder-breadth", "arm-length",
+    "ankle", "bicep", "calf", "forearm", "leg-length",
+    "shoulder-to-crotch", "thigh", "wrist",
+  ];
+  let html = "<table>";
+  for (const key of order) {
+    if (m[key] === undefined) continue;
+    html += `<tr><td>${key}</td><td>${m[key].toFixed(1)} cm</td></tr>`;
+  }
+  html += "</table>";
+  document.getElementById("measurements").innerHTML = html;
+}
+
+// =========================================================
+// Phone capture: QR session + polling
+// =========================================================
+
+let currentSessionId = null;
+let pollTimer = null;
+let qrInstance = null;
+
+async function startSession() {
+  document.getElementById("pollStatus").innerHTML = '<span class="dot-pulse"></span>Creating session...';
+  document.getElementById("qrcode").innerHTML = "";
+
+  const res = await fetch("/api/session/new", { method: "POST" });
+  const { session_id } = await res.json();
+  currentSessionId = session_id;
+
+  const { url: publicBase } = await fetch("/api/ngrok-url").then(r => r.json());
+  const base = publicBase || window.location.origin;
+  const captureUrl = `${base}/capture?session=${session_id}`;
+
+  qrInstance = new QRCode(document.getElementById("qrcode"), {
+    text: captureUrl, width: 180, height: 180,
+  });
+
+  const link = document.getElementById("sessionLink");
+  link.href = captureUrl;
+  link.textContent = captureUrl;
+
+  if (!publicBase) {
+    document.getElementById("pollStatus").innerHTML =
+      '⚠️ No ngrok tunnel detected — QR code will only work if the phone is on this exact machine. Start ngrok (see chat) and click "New QR code".';
+  } else {
+    document.getElementById("pollStatus").innerHTML = '<span class="dot-pulse"></span>Waiting for phone capture...';
+  }
+
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(pollSession, 2000);
+}
+
+async function pollSession() {
+  if (!currentSessionId) return;
+  try {
+    const res = await fetch(`/api/session/${currentSessionId}/result`);
+    const data = await res.json();
+
+    if (data.status === "done") {
+      clearInterval(pollTimer);
+      document.getElementById("pollStatus").textContent = "✅ Received from phone.";
+      showMesh(data.vertices, data.faces);
+      renderMeasurements(data.measurements);
+    } else if (data.status === "error") {
+      clearInterval(pollTimer);
+      document.getElementById("pollStatus").textContent = "❌ Error: " + data.detail;
+    }
+  } catch (e) {
+    // transient network hiccup while polling -- ignore, next tick retries
+  }
+}
+
+document.getElementById("newSessionBtn").addEventListener("click", startSession);
+
+// =========================================================
+// Direct (same-device) generation, for testing without a phone
+// =========================================================
+
+async function generate() {
+  const frontFile = document.getElementById("frontFile").files[0];
+  const sideFile = document.getElementById("sideFile").files[0];
+  const height = document.getElementById("heightInput").value;
+  const status = document.getElementById("status");
+  const btn = document.getElementById("generateBtn");
+
+  if (!frontFile || !sideFile) {
+    status.textContent = "Please select both a front and side photo.";
+    return;
+  }
+
+  const form = new FormData();
+  form.append("front", frontFile);
+  form.append("side", sideFile);
+  form.append("height_cm", height);
+
+  btn.disabled = true;
+  status.textContent = "Generating — segmentation + measurement prediction + 3D fitting takes ~15-30s...";
+
+  try {
+    const res = await fetch(API_URL, { method: "POST", body: form });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Server error (${res.status})`);
+    }
+    const data = await res.json();
+    showMesh(data.vertices, data.faces);
+    renderMeasurements(data.measurements);
+    status.textContent = "Done.";
+  } catch (e) {
+    status.textContent = "Error: " + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById("generateBtn").addEventListener("click", generate);
+
+initViewer();
+startSession();
+</script>
+</body>
+</html>

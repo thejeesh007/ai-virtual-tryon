@@ -3,10 +3,15 @@ Step 11: validate the trained models on real photos in data/dataset/person_XXX.
 
 These are real RGB photos, not BodyM's synthetic silhouettes, so this
 script first segments each photo into a silhouette (MediaPipe Selfie
-Segmentation) and re-frames it onto a 720x960 canvas using the same
-bbox-height/canvas-height and framing ratios measured from real BodyM
-training masks, so the pixel-scale the models were trained on is roughly
-preserved, before feeding it to the baseline and CNN models.
+Segmentation -- tried swapping this for rembg/u2net_human_seg, which gives
+visually cleaner masks but measurably *worse* accuracy since the baseline/
+CNN were trained on BodyM's own mask style, which MediaPipe's output
+happens to resemble more closely despite its own boundary imperfections;
+see bodym_output/real_masks history) and re-frames it onto a 720x960
+canvas using the same bbox-height/canvas-height and framing ratios
+measured from real BodyM training masks, so the pixel-scale the models
+were trained on is roughly preserved, before feeding it to the baseline
+and CNN models.
 
 There is no tape-measured ground truth for these people in the repo, so by
 default this reports *predictions*, not MAE. Pass --ground-truth-csv to
@@ -48,7 +53,10 @@ def parse_args():
     p.add_argument("--people", type=str, default="",
                     help="Comma-separated person folder names to run. Default: all people listed in --heights.")
     p.add_argument("--ground-truth-csv", type=str, default="",
-                    help="Optional CSV with columns: person,chest,waist,hip,shoulder-breadth,arm-length")
+                    help="Optional CSV with a 'person' column plus any subset of "
+                         "TARGET_COLS (chest,waist,hip,shoulder-breadth,arm-length,ankle,"
+                         "bicep,calf,forearm,leg-length,shoulder-to-crotch,thigh,wrist) "
+                         "-- error is only reported for columns actually present.")
     return p.parse_args()
 
 
@@ -183,8 +191,8 @@ def build_real_masks(person, ref, segmenter):
 # Inference
 # =========================================================
 
-def predict_baseline(front_path, side_path, height_cm):
-    model_path = os.path.join(OUTPUT_DIR, "baseline_rf.joblib")
+def predict_baseline(front_path, side_path, height_cm, model_name="rf"):
+    model_path = os.path.join(OUTPUT_DIR, f"baseline_{model_name}.joblib")
     if not os.path.exists(model_path):
         return None
 
@@ -238,7 +246,6 @@ def predict_cnn(front_path, side_path, height_cm):
 def main():
     args = parse_args()
     heights = parse_heights(args.heights)
-
     people = [p.strip() for p in args.people.split(",") if p.strip()] or list(heights.keys())
 
     gt = None
@@ -280,13 +287,14 @@ def main():
             results[person] = {"baseline": baseline_pred, "cnn": cnn_pred}
 
             if gt is not None and person in gt.index:
-                truth = gt.loc[person][TARGET_COLS].astype(float)
+                known_cols = [c for c in TARGET_COLS if c in gt.columns]
+                truth = gt.loc[person][known_cols].astype(float)
                 print("Ground truth (cm):        ", truth.round(1).to_dict())
                 if baseline_pred:
-                    err = {k: round(abs(baseline_pred[k] - truth[k]), 2) for k in TARGET_COLS}
+                    err = {k: round(abs(baseline_pred[k] - truth[k]), 2) for k in known_cols}
                     print("Baseline abs error (cm):  ", err)
                 if cnn_pred:
-                    err = {k: round(abs(cnn_pred[k] - truth[k]), 2) for k in TARGET_COLS}
+                    err = {k: round(abs(cnn_pred[k] - truth[k]), 2) for k in known_cols}
                     print("CNN abs error (cm):       ", err)
 
     print("\nDone.")

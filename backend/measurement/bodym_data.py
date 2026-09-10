@@ -31,8 +31,13 @@ OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "bodym_output")
 
 SPLITS = ["train", "testA", "testB"]
 
-# Measurements we regress (subset of measurements.csv's columns).
-TARGET_COLS = ["chest", "waist", "hip", "shoulder-breadth", "arm-length"]
+# All of measurements.csv's columns except "height" -- that one is a known
+# input (SCALAR_COLS below), not something to predict from the photos.
+TARGET_COLS = [
+    "chest", "waist", "hip", "shoulder-breadth", "arm-length",
+    "ankle", "bicep", "calf", "forearm", "leg-length",
+    "shoulder-to-crotch", "thigh", "wrist",
+]
 
 # Known-input scalar(s) fed alongside the images (matches deployment: the
 # user tells the app their height).

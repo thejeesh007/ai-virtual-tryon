@@ -14,3 +14,14 @@ backend/measurement/hmr2_output/
 
 # Cloned external repo (its own .git, 500MB+); clone separately, don't vendor
 third_party/
+
+# SMPL model files: license-gated (registration required at smpl.is.tue.mpg.de),
+# not redistributable. Each dev copies their own into this folder.
+backend/measurement/smpl_models/
+
+# MGN garment dataset (~1GB, non-commercial research license, direct
+# re-downloadable from MPI-INF -- see data/garments/mgn/README or chat history)
+data/garments/mgn/
+
+# Runtime logs
+*.log

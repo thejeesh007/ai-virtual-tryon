@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Capture Photos</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: system-ui, -apple-system, sans-serif;
+    background: #000; color: #e6e6e6; min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  #stage {
+    position: relative; width: 100%; max-width: 480px; aspect-ratio: 3/4;
+    overflow: hidden; background: #111;
+  }
+  #video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  #overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #checklist {
+    position: absolute; top: 8px; left: 8px; right: 8px; font-size: 13px; line-height: 1.9;
+    background: rgba(0,0,0,0.6); border-radius: 10px; padding: 10px 14px;
+  }
+  .check { display: flex; align-items: center; gap: 8px; }
+  .check .dot {
+    width: 9px; height: 9px; border-radius: 50%; flex: none;
+    background: #ff7b72; transition: background 0.15s;
+  }
+  .check.pass .dot { background: #7ee787; }
+  #captureLabel {
+    position: absolute; bottom: 8px; left: 0; right: 0; text-align: center;
+    font-size: 16px; font-weight: 700; text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+  }
+  #controls { width: 100%; max-width: 480px; padding: 16px; }
+  button {
+    width: 100%; padding: 14px; border-radius: 8px; border: none;
+    background: #2f81f7; color: white; font-size: 15px; font-weight: 700; cursor: pointer;
+  }
+  button:disabled { background: #30363d; color: #6e7681; cursor: not-allowed; }
+  #msg { text-align: center; font-size: 13px; color: #8b949e; margin-top: 10px; min-height: 18px; }
+  #heightStep, #doneStep { max-width: 480px; padding: 24px; text-align: center; }
+  #heightStep input {
+    width: 100%; padding: 12px; font-size: 18px; text-align: center; margin: 16px 0;
+    border-radius: 8px; border: 1px solid #30363d; background: #0d1117; color: #e6e6e6;
+  }
+  h2 { font-size: 18px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+
+<div id="captureFlow">
+  <div id="stage">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="overlay"></canvas>
+    <div id="checklist"></div>
+    <div id="captureLabel">FRONT view</div>
+  </div>
+  <div id="controls">
+    <button id="captureBtn" disabled>Stand as guided to enable capture</button>
+    <div id="msg"></div>
+  </div>
+</div>
+
+<div id="heightStep" hidden>
+  <h2>Height (cm)</h2>
+  <input type="number" id="heightInput" value="170" step="0.5" min="100" max="230" />
+  <button id="submitBtn">Submit</button>
+  <div id="submitMsg"></div>
+</div>
+
+<div id="doneStep" hidden>
+  <h2>✅ Done</h2>
+  <p>Check your laptop — the 3D avatar is generating there now.</p>
+</div>
+
+<script type="module">
+import { PoseLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+const params = new URLSearchParams(location.search);
+const sessionId = params.get("session");
+
+let stage = "front"; // "front" | "side" | "height" | "submitting" | "done"
+let frontBlob = null, sideBlob = null;
+let poseLandmarker = null;
+let video, overlayCtx, overlayCanvas;
+let lastChecksPassed = false;
+
+const CHECKS = {
+  front: [
+    { key: "inFrame", label: "Full body in frame" },
+    { key: "feetApart", label: "Feet shoulder-width apart" },
+    { key: "centered", label: "Standing straight, centered" },
+  ],
+  side: [
+    { key: "inFrame", label: "Full body in frame" },
+    { key: "handClear", label: "Hands clear of hips" },
+  ],
+};
+
+function dist(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function evaluateFront(lm) {
+  const nose = lm[0], lAnkle = lm[27], rAnkle = lm[28];
+  const lShoulder = lm[11], rShoulder = lm[12];
+  const lHip = lm[23], rHip = lm[24];
+
+  const visible = [nose, lAnkle, rAnkle, lShoulder, rShoulder, lHip, rHip]
+    .every(p => p && p.visibility > 0.4);
+  const inFrame = visible;
+
+  const shoulderWidth = inFrame ? dist(lShoulder, rShoulder) : 0;
+  const ankleWidth = inFrame ? dist(lAnkle, rAnkle) : 0;
+  const feetApart = inFrame && ankleWidth > shoulderWidth * 0.55;
+
+  const shoulderMidX = (lShoulder.x + rShoulder.x) / 2;
+  const hipMidX = (lHip.x + rHip.x) / 2;
+  const centered = inFrame && Math.abs(shoulderMidX - hipMidX) < 0.06
+    && Math.abs(shoulderMidX - 0.5) < 0.18;
+
+  return { inFrame, feetApart, centered };
+}
+
+function evaluateSide(lm) {
+  const nose = lm[0], lAnkle = lm[27], rAnkle = lm[28];
+  const lWrist = lm[15], rWrist = lm[16];
+  const lHip = lm[23], rHip = lm[24];
+
+  const coreVisible = [nose, lAnkle, rAnkle].every(p => p && p.visibility > 0.3);
+  const inFrame = coreVisible;
+
+  // Whichever wrist/hip pair is more visible is the side facing the camera.
+  const useLeft = (lWrist?.visibility || 0) > (rWrist?.visibility || 0);
+  const wrist = useLeft ? lWrist : rWrist;
+  const hip = useLeft ? lHip : rHip;
+  const handClear = inFrame && wrist && hip && wrist.visibility > 0.3
+    ? dist(wrist, hip) > 0.09
+    : true; // if we can't see the hand at all, don't block on this check
+
+  return { inFrame, handClear };
+}
+
+function renderChecklist(results) {
+  const checklist = document.getElementById("checklist");
+  const defs = CHECKS[stage];
+  checklist.innerHTML = defs.map(d => {
+    const pass = !!results[d.key];
+    return `<div class="check ${pass ? "pass" : ""}"><span class="dot"></span>${d.label}</div>`;
+  }).join("");
+  const allPass = defs.every(d => results[d.key]);
+  lastChecksPassed = allPass;
+  const btn = document.getElementById("captureBtn");
+  btn.disabled = !allPass;
+  btn.textContent = allPass ? "Capture" : "Stand as guided to enable capture";
+  return allPass;
+}
+
+function drawSkeleton(lm) {
+  overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  overlayCtx.fillStyle = lastChecksPassed ? "#7ee787" : "#f0883e";
+  const w = overlayCanvas.width, h = overlayCanvas.height;
+  const pts = [0, 11, 12, 15, 16, 23, 24, 27, 28];
+  for (const i of pts) {
+    const p = lm[i];
+    if (!p || p.visibility < 0.3) continue;
+    overlayCtx.beginPath();
+    // video is mirrored (scaleX(-1)) so flip x for the overlay drawing too.
+    overlayCtx.arc((1 - p.x) * w, p.y * h, 5, 0, 2 * Math.PI);
+    overlayCtx.fill();
+  }
+}
+
+async function detectLoop() {
+  if (stage !== "front" && stage !== "side") return;
+
+  if (video.readyState >= 2) {
+    const result = poseLandmarker.detectForVideo(video, performance.now());
+    if (result.landmarks && result.landmarks.length > 0) {
+      const lm = result.landmarks[0];
+      const checks = stage === "front" ? evaluateFront(lm) : evaluateSide(lm);
+      renderChecklist(checks);
+      drawSkeleton(lm);
+    } else {
+      renderChecklist({});
+      overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+    }
+  }
+
+  requestAnimationFrame(detectLoop);
+}
+
+function captureFrame() {
+  const canvas = document.createElement("canvas");
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  // Save un-mirrored (flip back) so the uploaded photo matches a normal photo.
+  const ctx = canvas.getContext("2d");
+  ctx.translate(canvas.width, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(video, 0, 0);
+
+  canvas.toBlob((blob) => {
+    if (stage === "front") {
+      frontBlob = blob;
+      stage = "side";
+      document.getElementById("captureLabel").textContent = "SIDE view — turn 90°";
+      document.getElementById("msg").textContent = "";
+    } else if (stage === "side") {
+      sideBlob = blob;
+      goToHeightStep();
+    }
+  }, "image/jpeg", 0.92);
+}
+
+function goToHeightStep() {
+  stage = "height";
+  document.getElementById("captureFlow").hidden = true;
+  document.getElementById("heightStep").hidden = false;
+  if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+}
+
+async function submitPhotos() {
+  const height = document.getElementById("heightInput").value;
+  const submitMsg = document.getElementById("submitMsg");
+  document.getElementById("submitBtn").disabled = true;
+  submitMsg.textContent = "Uploading and generating (this runs on the laptop, ~15-30s)...";
+
+  const form = new FormData();
+  form.append("front", frontBlob, "front.jpg");
+  form.append("side", sideBlob, "side.jpg");
+  form.append("height_cm", height);
+
+  try {
+    const res = await fetch(`/api/session/${sessionId}/submit`, { method: "POST", body: form });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Server error (${res.status})`);
+    }
+    document.getElementById("heightStep").hidden = true;
+    document.getElementById("doneStep").hidden = false;
+  } catch (e) {
+    submitMsg.textContent = "Error: " + e.message;
+    document.getElementById("submitBtn").disabled = false;
+  }
+}
+
+async function init() {
+  if (!sessionId) {
+    document.getElementById("msg").textContent =
+      "No session found. Open this page via the QR code on the laptop.";
+    return;
+  }
+
+  video = document.getElementById("video");
+  overlayCanvas = document.getElementById("overlay");
+  overlayCtx = overlayCanvas.getContext("2d");
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment", width: { ideal: 1080 }, height: { ideal: 1440 } },
+      audio: false,
+    });
+    video.srcObject = stream;
+    await new Promise(r => video.onloadedmetadata = r);
+    overlayCanvas.width = video.videoWidth;
+    overlayCanvas.height = video.videoHeight;
+  } catch (e) {
+    document.getElementById("msg").textContent = "Camera error: " + e.message;
+    return;
+  }
+
+  document.getElementById("msg").textContent = "Loading pose detector...";
+  const vision = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+  );
+  poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+    baseOptions: {
+      modelAssetPath:
+        "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+      delegate: "GPU",
+    },
+    runningMode: "VIDEO",
+    numPoses: 1,
+  });
+  document.getElementById("msg").textContent = "";
+
+  detectLoop();
+}
+
+document.getElementById("captureBtn").addEventListener("click", captureFrame);
+document.getElementById("submitBtn").addEventListener("click", submitPhotos);
+
+init();
+</script>
+</body>
+</html>

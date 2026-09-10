@@ -1,4 +1,8 @@
-person,chest,waist,hip,shoulder-breadth,arm-length
-person_007,85,75,90,38,52
-person_008,84,73,90,42,58
-person_009,84,73,90,42,58
+person,chest,waist,hip,shoulder-breadth,arm-length,ankle,bicep,calf,forearm,leg-length,shoulder-to-crotch,thigh,wrist
+person_007,85,75,90,38,52,,,,,,,,
+person_008,84,73,90,42,58,,,,,,,,
+person_009,84,73,90,42,58,,,,,,,,
+person_010,105,100,109,47.5,62,,,,,,,,
+person_011,84,73,90,42,58,,,,,,,,
+person_006,105,100,109,47.5,62,,,,,,,,
+panda,100,90,97,42,53.5,25.5,32.5,39,29.5,86,67.5,61,18

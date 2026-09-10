@@ -10,6 +10,7 @@ Usage:
         bodym_output/baseline_rf.joblib.
 """
 
+import argparse
 import os
 import time
 
@@ -17,12 +18,21 @@ import cv2
 import joblib
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import HistGradientBoostingRegressor, RandomForestRegressor
 from sklearn.multioutput import MultiOutputRegressor
 
 from bodym_data import (
     OUTPUT_DIR, TARGET_COLS, SCALAR_COLS, load_merged, subject_split,
 )
+
+MODELS = {
+    "rf": lambda: MultiOutputRegressor(
+        RandomForestRegressor(n_estimators=300, max_depth=None, n_jobs=-1, random_state=42)
+    ),
+    "hgb": lambda: MultiOutputRegressor(
+        HistGradientBoostingRegressor(max_iter=300, random_state=42)
+    ),
+}
 
 N_SLICES = 20
 
@@ -56,7 +66,29 @@ def mae_table(model, splits_features, splits_targets, target_cols=TARGET_COLS):
     return pd.DataFrame(rows, index=target_cols).T
 
 
+def get_or_build_features(df, cache_name):
+    cache_path = os.path.join(OUTPUT_DIR, f"baseline_features_{cache_name}.npz")
+
+    if os.path.exists(cache_path):
+        data = np.load(cache_path)
+        return data["X"], data["y"]
+
+    X = build_features(df)
+    y = df[TARGET_COLS].values.astype(float)
+    np.savez_compressed(cache_path, X=X, y=y)
+    return X, y
+
+
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument("--model", choices=list(MODELS.keys()), default="rf",
+                    help="rf = RandomForestRegressor (default), hgb = HistGradientBoostingRegressor")
+    return p.parse_args()
+
+
 def main():
+    args = parse_args()
+
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     print("Loading + merging splits...")
@@ -70,27 +102,26 @@ def main():
 
     splits = {"train": train_df, "val": val_df, "testA": testA, "testB": testB}
 
-    print("\nExtracting width-profile features (front + side + height_cm)...")
+    print("\nExtracting width-profile features (front + side + height_cm) [cached after first run]...")
     t0 = time.time()
-    features = {name: build_features(df) for name, df in splits.items()}
-    targets = {name: df[TARGET_COLS].values.astype(float) for name, df in splits.items()}
+    features, targets = {}, {}
+    for name, df in splits.items():
+        features[name], targets[name] = get_or_build_features(df, name)
     print(f"done in {time.time() - t0:.1f}s. feature dim = {features['train'].shape[1]}")
 
-    print("\nFitting RandomForestRegressor (MultiOutput)...")
-    model = MultiOutputRegressor(
-        RandomForestRegressor(n_estimators=300, max_depth=None, n_jobs=-1, random_state=42)
-    )
+    print(f"\nFitting {args.model} (MultiOutput)...")
+    model = MODELS[args.model]()
     t0 = time.time()
     model.fit(features["train"], targets["train"])
     print(f"fit in {time.time() - t0:.1f}s")
 
     table = mae_table(model, features, targets)
-    print("\n=== Baseline (RandomForest) MAE per measurement (cm) ===")
+    print(f"\n=== Baseline ({args.model}) MAE per measurement (cm) ===")
     print(table.round(2))
     print("\nMean MAE across measurements:")
     print(table.mean(axis=1).round(2))
 
-    out_model = os.path.join(OUTPUT_DIR, "baseline_rf.joblib")
+    out_model = os.path.join(OUTPUT_DIR, f"baseline_{args.model}.joblib")
     joblib.dump({
         "model": model,
         "target_cols": TARGET_COLS,
@@ -99,7 +130,7 @@ def main():
     }, out_model)
     print(f"\nSaved model to {out_model}")
 
-    table.to_csv(os.path.join(OUTPUT_DIR, "baseline_mae.csv"))
+    table.to_csv(os.path.join(OUTPUT_DIR, f"baseline_{args.model}_mae.csv"))
 
 
 if __name__ == "__main__":
