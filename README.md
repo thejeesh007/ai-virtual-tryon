@@ -13,6 +13,30 @@ DressFit is a research prototype for estimating body measurements from two photo
 
 The app is a prototype. Measurement quality depends on the input photos and trained model. Garment draping depends on the separately supplied GarmentCode assets and patterns.
 
+## Project approach and contributions
+
+DressFit evaluates fit from a user's body shape and the garment's sewing pattern rather than by placing a garment image over a person. The end-to-end flow is:
+
+1. Capture front and side photos and enter height.
+2. Segment and frame the silhouettes, then predict 13 measurements. The project compares Random Forest and HistGradientBoosting models built on silhouette width profiles with a dual-branch CNN that processes the front and side masks.
+3. Fit the predicted measurements to an SMPL body shape and pose the avatar to match the garment patterns' assumptions.
+4. Generate or load a size-specific sewing pattern and drape it on the user's avatar.
+5. Return a 3D viewer result, a vertex-color heatmap showing local tightness/looseness, and a separate Snug / Good fit / Loose verdict.
+
+Key design decisions from the project are to calculate achieved ease against the individual user's predicted measurements, apply fabric-specific expected ease, and keep the local drape heatmap separate from the across-size fit verdict. An optional multi-pose check compares the verdict across small pose changes instead of presenting the result from one pose as certainty.
+
+## Evaluation results reported in the project report
+
+The measurement models were evaluated on BodyM's `testA` split. The dual-branch CNN had the lowest chest mean absolute error (3.27 cm). HistGradientBoosting had the lowest waist (3.67 cm) and hip (3.60 cm) errors. The CNN reached 62.6% accuracy and a 63.9% macro F1 on the report's derived size-classification task. No single model was best for every measurement; the current web inference path uses the HGB baseline. These are dataset evaluation results, not a guarantee of an individual scan's accuracy.
+
+The report's fit-verdict case study used a 112.5 cm chest and a fabric expected ease of 4.0 cm: size S had -13.44 cm achieved ease and was classified Snug; size XXL had +6.88 cm achieved ease and was classified Good fit. This illustrates why garment-to-body distance is useful for the visual heatmap while expected-versus-achieved ease is used for the overall size verdict.
+
+## Catalogue and known limits
+
+The report describes three real calibrated products (Nobero Classic Polo, Nobero Oversized Sweatshirt, and Nobero cargo pants), plus 19 generic fabric garments (9 tops and 10 bottoms). Real garment dimensions come from published size guides; generic items use the project's fabric reference data.
+
+The report records primary measurement errors around 3-5 cm, which can be close to the difference between size buckets. Only a small number of real products have calibrated size guides, and phone-specific camera behavior, including face blurring and mirroring correction, still needs broader validation on physical devices. Pose agreement is a heuristic based on sampled poses and does not include measurement uncertainty. Warp support is environment-dependent and a garment that has not been visually validated may need additional tuning.
+
 ## Repository layout
 
 ```text
