@@ -49,6 +49,56 @@
   }
   @keyframes pulse { 0%,100% { opacity: 0.3; } 50% { opacity: 1; } }
   hr { border: none; border-top: 1px solid #21262d; margin: 20px 0; }
+
+  select {
+    width: 100%; padding: 8px; border-radius: 6px;
+    border: 1px solid #30363d; background: #0d1117; color: #e6e6e6; font-size: 13px;
+  }
+  #garmentSection { display: none; }
+  #garmentStats { font-size: 12px; margin-top: 10px; color: #c9d1d9; }
+  #garmentStats table { width: 100%; border-collapse: collapse; }
+  #garmentStats td { padding: 3px 0; border-bottom: 1px solid #21262d; }
+  #garmentStats td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+  #legend { display: flex; gap: 10px; font-size: 11px; color: #8b949e; margin-top: 8px; }
+  #legend span { display: flex; align-items: center; gap: 4px; }
+  #legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+  .checkboxRow { display: flex; align-items: center; gap: 8px; margin: 14px 0 4px; font-size: 13px; color: #c9d1d9; }
+  .checkboxRow input { width: auto; margin: 0; }
+  #swatchRow { display: flex; gap: 8px; margin: 8px 0 4px; }
+  .swatch {
+    width: 22px; height: 22px; border-radius: 50%; cursor: pointer;
+    border: 2px solid transparent; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.15);
+  }
+  .swatch.active { border-color: #58a6ff; }
+
+  #authGate input[type=text], #authGate input[type=password] {
+    width: 100%; padding: 8px; border-radius: 6px;
+    border: 1px solid #30363d; background: #0d1117; color: #e6e6e6; font-size: 13px;
+  }
+  #authError { font-size: 12px; color: #f85149; margin-top: 8px; min-height: 16px; }
+  #authSwitchRow { font-size: 12px; color: #8b949e; margin-top: 12px; text-align: center; }
+  #authSwitchRow a { color: #58a6ff; cursor: pointer; text-decoration: none; }
+  #userBar {
+    display: none; justify-content: space-between; align-items: center;
+    font-size: 13px; color: #c9d1d9; margin-bottom: 8px;
+  }
+  #userBar button { width: auto; margin: 0; padding: 4px 10px; font-size: 12px; }
+  #welcomeBackSection { display: none; }
+  #welcomeBackSection button { margin-top: 8px; }
+
+  #poseCheckResults { display: none; margin-top: 10px; }
+  #poseConfidenceBanner {
+    font-size: 13px; padding: 8px 10px; border-radius: 6px; margin-bottom: 8px;
+    background: #161b22; border: 1px solid #30363d;
+  }
+  .poseButtonRow { display: flex; flex-direction: column; gap: 6px; }
+  .poseBtn, #poseBackBtn {
+    width: 100%; margin-top: 0; padding: 8px 10px; border-radius: 6px;
+    border: 1px solid #30363d; background: #21262d; color: #e6e6e6;
+    font-size: 12.5px; font-weight: 500; cursor: pointer; text-align: left;
+  }
+  .poseBtn.active, #poseBackBtn.active { border-color: #58a6ff; background: #1c2a3d; }
 </style>
 </head>
 <body>
@@ -57,6 +107,34 @@
   <h1>Avatar Generator</h1>
   <p class="sub">Front + side photo + height → predicted measurements + 3D avatar</p>
 
+  <div id="userBar">
+    <span id="userBarLabel"></span>
+    <button class="secondary" id="logoutBtn">Log out</button>
+  </div>
+
+  <div id="authGate">
+    <h2 id="authModeLabel">Log in</h2>
+    <label>Username</label>
+    <input type="text" id="authUsername" autocomplete="username" />
+    <label>Password</label>
+    <input type="password" id="authPassword" autocomplete="current-password" />
+    <button id="authSubmitBtn">Log in</button>
+    <div id="authError"></div>
+    <div id="authSwitchRow">
+      <span id="authSwitchText">Don't have an account? <a id="authSwitchLink">Sign up</a></span>
+    </div>
+  </div>
+
+  <div id="appContent" style="display:none;">
+
+  <div id="welcomeBackSection">
+    <h2>Welcome back</h2>
+    <p class="sub" style="margin-bottom:8px;">You already have saved measurements. Use them, or take a new photo?</p>
+    <button id="useSavedBtn">Use my saved measurements</button>
+    <button class="secondary" id="takeNewPhotoBtn">Take a new photo</button>
+  </div>
+
+  <div id="captureSection">
   <h2>1. Capture on phone</h2>
   <div id="qrArea">
     <div id="qrBox"><div id="qrcode"></div></div>
@@ -75,8 +153,130 @@
   <input type="number" id="heightInput" value="170" step="0.5" min="100" max="230" />
   <button id="generateBtn">Generate Avatar</button>
   <div id="status"></div>
+  </div>
 
   <div id="measurements"></div>
+
+  <div id="garmentSection">
+    <hr/>
+    <h2>2. Check garment fit</h2>
+    <label>Garment category</label>
+    <select id="garmentKindSelect">
+      <option value="top">Top (shirt/tee/sweatshirt)</option>
+      <option value="bottom">Bottom (pants/shorts)</option>
+    </select>
+    <label>Fabric type</label>
+    <select id="fabricSelect"></select>
+    <label id="sizeLabel">Size</label>
+    <select id="sizeSelect"></select>
+
+    <!-- Realistic-look toggle + fabric swatches are for the 3D garment-drape
+    view specifically; hidden while "Try On" computes the measurement-based
+    fit heatmap on the avatar body instead (see main.py's /fit_heatmap).
+    Code kept intact below, not deleted, for whenever draping comes back. -->
+    <label class="checkboxRow" style="margin-top:14px; display:none;">
+      <input type="checkbox" id="realisticToggle" checked />
+      Realistic look (cloth physics + fabric)
+    </label>
+    <div id="swatchRow" style="display:none;"></div>
+
+    <button id="tryOnBtn">Show Fit Heatmap</button>
+    <button class="secondary" id="removeGarmentBtn" style="display:none;">Clear Heatmap</button>
+    <div id="garmentStatus" style="font-size:13px;color:#8b949e;margin-top:8px;min-height:18px;"></div>
+    <div id="legend" style="display:none;">
+      <span><i style="background:#ff3b30"></i>Tight</span>
+      <span><i style="background:#34c759"></i>Good fit</span>
+      <span><i style="background:#0a84ff"></i>Loose</span>
+    </div>
+    <div id="garmentStats"></div>
+  </div>
+
+  <div id="pbdSection">
+    <hr/>
+    <h2>3. Physics drape (preview)</h2>
+    <p class="sub" style="margin-bottom:8px;">
+      Real cloth simulation (stretch + bend + body collision), not the
+      measurement heatmap above. Runs a genuine physics simulation per
+      request -- expect roughly 20s-1min, not seconds. "Generic fabric"
+      garments aren't a real product -- they're built from a standard body
+      + fabric-ease table, and the very first request for a given
+      fabric/size builds its pattern on the fly (adds up to another ~30s
+      just that first time).
+    </p>
+    <p class="sub" style="margin-bottom:8px; font-size:12px;">
+      <b>Two separate signals below, on purpose:</b> the color on the
+      garment is <i>relative drape tightness</i> -- which part of THIS
+      garment sits closer to (red) or further from (blue) the body than
+      the rest of it. Any top's chest/shoulders read tighter than its own
+      hem just from how it hangs, at any size -- so this is NOT a good/bad
+      verdict, just where the fabric sits closer/looser on itself. The
+      "Fit: Snug / Good fit / Loose" text after draping is the actual size
+      verdict, based on the real average gap to your body.
+    </p>
+    <label>Garment</label>
+    <select id="pbdProductSelect"></select>
+    <label>Engine</label>
+    <select id="pbdEngineSelect">
+      <option value="warp">Real GPU simulator (best quality, ~20-60s, needs WSL2; tops + pants only)</option>
+      <option value="pbd">Built-in physics (no GPU needed, top-only, ~1 min)</option>
+      <option value="simple">Simple geometric wrap (fastest, ~seconds, works for every garment kind including dresses)</option>
+    </select>
+    <label>Size</label>
+    <select id="pbdSizeSelect"></select>
+    <div id="sizeRecommendation" style="font-size:12px; color:#8b949e; margin:-4px 0 4px;"></div>
+    <button id="pbdDrapeBtn">Drape garment (physics preview)</button>
+    <button class="secondary" id="pbdRemoveBtn" style="display:none;">Remove draped garment</button>
+    <div id="pbdStatus" style="font-size:13px;color:#8b949e;margin-top:8px;min-height:18px;"></div>
+    <div id="pbdLegend" style="display:none; margin-top:6px; font-size:11px; color:#8b949e;">
+      <div style="margin-bottom:4px;">Garment color = relative drape tightness (not a fit verdict):</div>
+      <div style="display:flex; gap:10px;">
+        <span style="display:flex; align-items:center; gap:4px;"><i style="width:10px;height:10px;border-radius:2px;display:inline-block;background:#ff3b30;"></i>closer to body</span>
+        <span style="display:flex; align-items:center; gap:4px;"><i style="width:10px;height:10px;border-radius:2px;display:inline-block;background:#34c759;"></i>mid</span>
+        <span style="display:flex; align-items:center; gap:4px;"><i style="width:10px;height:10px;border-radius:2px;display:inline-block;background:#0a84ff;"></i>further from body</span>
+      </div>
+    </div>
+    <button class="secondary" id="poseCheckBtn" style="display:none; margin-top:10px;">Check fit robustness (real GPU, ~60-75s for tops, ~100-125s for pants)</button>
+    <div id="poseCheckStatus" style="font-size:13px;color:#8b949e;margin-top:8px;min-height:18px;"></div>
+    <div id="poseCheckResults">
+      <div id="poseConfidenceBanner"></div>
+      <div class="poseButtonRow" id="poseButtonRow"></div>
+      <button id="poseBackBtn">&larr; Back to main view</button>
+    </div>
+  </div>
+
+  <div id="outfitSection">
+    <hr/>
+    <h2>4. Full outfit (top + bottom)</h2>
+    <p class="sub" style="margin-bottom:8px;">
+      Drapes a top and a bottom together on the same avatar, in one view --
+      two independent single-garment drapes composited side by side, not a
+      real cloth-on-cloth simulation between the two (so an untucked shirt's
+      hem can visually overlap the pants' own waistband -- toggle "tuck in"
+      below for a trimmed-hem approximation of that instead).
+    </p>
+    <label>Top</label>
+    <select id="outfitTopSelect"></select>
+    <label>Top size</label>
+    <select id="outfitTopSizeSelect"></select>
+    <label>Bottom</label>
+    <select id="outfitBottomSelect"></select>
+    <label>Bottom size</label>
+    <select id="outfitBottomSizeSelect"></select>
+    <label>Engine</label>
+    <select id="outfitEngineSelect">
+      <option value="warp">Real GPU simulator (best quality, needs WSL2)</option>
+      <option value="simple">Simple geometric wrap (fastest)</option>
+    </select>
+    <label class="checkboxRow">
+      <input type="checkbox" id="outfitTuckInToggle" />
+      Tuck in top
+    </label>
+    <button id="outfitDrapeBtn">Try on full outfit</button>
+    <button class="secondary" id="outfitRemoveBtn" style="display:none;">Remove outfit</button>
+    <div id="outfitStatus" style="font-size:13px;color:#8b949e;margin-top:8px;min-height:18px;"></div>
+  </div>
+
+  </div> <!-- /appContent -->
 </div>
 
 <div id="viewer">
@@ -89,7 +289,40 @@
 <script>
 const API_URL = "/api/generate";
 
-let scene, camera, renderer, controls, mesh, modestyMesh;
+let scene, camera, renderer, controls, mesh, modestyMesh, garmentMesh;
+// The full-outfit feature's SECOND garment slot (the bottom half) --
+// garmentMesh above stays the "primary" single-garment slot (used by the
+// physics-drape section and the pose-check viewer); this is additive, only
+// ever populated by the outfit section below. Cleared from every OTHER
+// entry point that takes ownership of garmentMesh (showGarment,
+// removeGarment, showPoseView, restoreMainView) so switching back to a
+// single-garment view never leaves a stale bottom-half mesh floating in
+// the scene from an earlier outfit render.
+let bottomGarmentMesh = null;
+
+// "Realistic look" state: heatmap mode shows the backend's exact static
+// positions/colors (matching the report's fit stats exactly); realistic
+// mode shows the SAME static positions with a glossier solid-color material
+// instead. Both modes intentionally use the backend's own already-validated
+// static drape geometry -- an earlier version of this also ran a live
+// client-side cloth re-simulation on top, but that turned out to be the
+// source of every visual bug found afterward (a collision halo, a gaping
+// neckline, a crumpled sleeve), each fixed only to reveal the next, while
+// the backend's un-simulated static shape looked correct from the start.
+// Dropped in favor of the lower-risk, already-working geometry.
+let garmentGeomCache = null; // {vertices, faces, colors} from the server, kept so mode-switching doesn't need a re-fetch
+// "heatmap" default: the physics-drape section's whole point is showing the
+// gap-to-body fit heatmap the backend already computes per vertex (see
+// color_from_gap in simple_drape.py/warp_drape.py) directly on the draped
+// garment's surface -- "realistic" mode ignores vertex colors entirely in
+// favor of a solid fabric tint, which was silently hiding that heatmap since
+// the toggle to switch back to "heatmap" was never exposed in this section's
+// UI. MeshStandardMaterial's default color is white when unset (see
+// buildGarmentMaterial below), which is also what gives the heatmap colors
+// a clean, unmuddied background to read against.
+let garmentMode = "heatmap";
+let garmentFabricColor = "#b8860b";
+const FABRIC_SWATCHES = ["#b8860b", "#7a1f2b", "#1f3a5f", "#1f4d3a", "#111318", "#e8e2d4"];
 
 // =========================================================
 // 3D viewer
@@ -137,13 +370,15 @@ function animate() {
   renderer.render(scene, camera);
 }
 
-function showMesh(vertices, faces) {
-  if (mesh) {
-    scene.remove(mesh);
-    mesh.geometry.dispose();
-    mesh.material.dispose();
-  }
+let lastAvatarVertices = null, lastAvatarFaces = null;
 
+// Shared by showMesh() and the pose-check viewer below (showPoseView /
+// restoreMainView) -- both need to build the same kind of skin-colored body
+// geometry from raw vertices/faces, but showMesh()'s OWN side effects
+// (regenerating the modesty garment, clearing any draped garment) are wrong
+// for a transient pose-comparison view, so those two don't call showMesh()
+// directly; they share just the geometry-building part via this helper.
+function bodyGeometryFrom(vertices, faces) {
   const geometry = new THREE.BufferGeometry();
   const positions = new Float32Array(vertices.length * 3);
   for (let i = 0; i < vertices.length; i++) {
@@ -161,12 +396,26 @@ function showMesh(vertices, faces) {
   }
   geometry.setIndex(new THREE.BufferAttribute(indices, 1));
   geometry.computeVertexNormals();
+  return geometry;
+}
 
-  const material = new THREE.MeshStandardMaterial({
+function bodyMaterial() {
+  return new THREE.MeshStandardMaterial({
     color: 0xd8a878, roughness: 0.7, metalness: 0.05, side: THREE.DoubleSide,
   });
+}
 
-  mesh = new THREE.Mesh(geometry, material);
+function showMesh(vertices, faces) {
+  lastAvatarVertices = vertices;
+  lastAvatarFaces = faces;
+
+  if (mesh) {
+    scene.remove(mesh);
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+  }
+
+  mesh = new THREE.Mesh(bodyGeometryFrom(vertices, faces), bodyMaterial());
   scene.add(mesh);
 
   let yMin = Infinity, yMax = -Infinity;
@@ -177,6 +426,297 @@ function showMesh(vertices, faces) {
   controls.target.set(0, (yMin + yMax) / 2, 0);
 
   addModestyGarment(vertices, yMin, yMax);
+
+  // A new avatar invalidates any previously-draped garment (it was fit to
+  // the old body). Clear it and reset the picker's status.
+  removeGarment();
+  clearFitHeatmap(/* resetUiOnly */ true);
+  document.getElementById("garmentSection").style.display = "block";
+}
+
+// Measurement-driven fit heatmap: recolors the AVATAR'S OWN mesh (same
+// vertices/faces as showMesh()) instead of adding a separate draped
+// garment overlay -- see backend/avatar/measurement_heatmap.py. No garment
+// mesh, no wrap/relax physics; just per-region tightness colors computed
+// from real garment measurements vs this user's own predicted measurements.
+function showFitHeatmap(vertices, faces, colors) {
+  // Mirrors showGarment()'s own cleanup in the other direction: a garment
+  // draped earlier in section 3 (garmentMesh) or an outfit's bottom half
+  // (bottomGarmentMesh) must not stay floating in the scene once this
+  // recolors the body for section 2's measurement heatmap instead -- this
+  // only removes them from the SCENE (a visual reset), it doesn't clear
+  // garmentGeomCache or section 3's own displayed stats/UI, so going back
+  // to the physics-drape section still shows what was there before.
+  clearOutfitBottomMesh();
+  if (garmentMesh) {
+    scene.remove(garmentMesh);
+    garmentMesh.geometry.dispose();
+    garmentMesh.material.dispose();
+    garmentMesh = null;
+  }
+  if (modestyMesh) modestyMesh.visible = true;
+
+  if (mesh) {
+    scene.remove(mesh);
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(vertices.length * 3);
+  const vcolors = new Float32Array(vertices.length * 3);
+  for (let i = 0; i < vertices.length; i++) {
+    positions[i * 3] = vertices[i][0];
+    positions[i * 3 + 1] = vertices[i][1];
+    positions[i * 3 + 2] = vertices[i][2];
+    vcolors[i * 3] = colors[i][0] / 255;
+    vcolors[i * 3 + 1] = colors[i][1] / 255;
+    vcolors[i * 3 + 2] = colors[i][2] / 255;
+  }
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(vcolors, 3));
+
+  const indices = new Uint32Array(faces.length * 3);
+  for (let i = 0; i < faces.length; i++) {
+    indices[i * 3] = faces[i][0];
+    indices[i * 3 + 1] = faces[i][1];
+    indices[i * 3 + 2] = faces[i][2];
+  }
+  geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+  geometry.computeVertexNormals();
+
+  const material = new THREE.MeshStandardMaterial({
+    vertexColors: true, roughness: 0.75, metalness: 0.0, side: THREE.DoubleSide,
+  });
+
+  mesh = new THREE.Mesh(geometry, material);
+  scene.add(mesh);
+}
+
+// resetUiOnly: true when called from showMesh() for a brand-new avatar
+// (no heatmap has necessarily been shown yet, so skip re-rendering the
+// mesh -- showMesh() itself already just built the plain-skin version).
+function clearFitHeatmap(resetUiOnly) {
+  if (!resetUiOnly && lastAvatarVertices && lastAvatarFaces) {
+    showMesh(lastAvatarVertices, lastAvatarFaces);
+  }
+  document.getElementById("removeGarmentBtn").style.display = "none";
+  document.getElementById("legend").style.display = "none";
+  document.getElementById("garmentStats").innerHTML = "";
+  document.getElementById("garmentStatus").textContent = "";
+}
+
+function buildGarmentMaterial(mode) {
+  if (mode === "heatmap") {
+    return new THREE.MeshStandardMaterial({
+      vertexColors: true, roughness: 0.75, metalness: 0.0, side: THREE.DoubleSide,
+    });
+  }
+  // "Realistic": a solid fabric color instead of the flat heatmap tint.
+  // An earlier, glossier version of this (low roughness + clearcoat) made
+  // every small imperfection in the drape mesh -- tiny/near-degenerate
+  // triangles from the pattern triangulation, invisible under matplotlib's
+  // flat preview renders -- show up as sharp, jagged-looking specular
+  // highlights. A softer, more matte finish scatters light broadly instead
+  // of catching each facet edge, which hides that same mesh noise the way
+  // an actual cotton/rayon-weight fabric (not polished satin) would.
+  return new THREE.MeshPhysicalMaterial({
+    color: new THREE.Color(garmentFabricColor),
+    roughness: 0.62,
+    metalness: 0.0,
+    clearcoat: 0.05,
+    reflectivity: 0.2,
+    side: THREE.DoubleSide,
+  });
+}
+
+// See bottomGarmentMesh's own declaration above for why every entry point
+// that takes over garmentMesh also clears this.
+function clearOutfitBottomMesh() {
+  if (bottomGarmentMesh) {
+    scene.remove(bottomGarmentMesh);
+    bottomGarmentMesh.geometry.dispose();
+    bottomGarmentMesh.material.dispose();
+    bottomGarmentMesh = null;
+  }
+  const btn = document.getElementById("outfitRemoveBtn");
+  if (btn) btn.style.display = "none";
+}
+
+function showGarment(vertices, faces, colors) {
+  clearOutfitBottomMesh();
+  garmentGeomCache = { vertices, faces, colors };
+
+  // The body underneath a physics-drape garment must always be the plain
+  // skin-tone mesh, never left showing section 2's measurement fit-heatmap
+  // coloring from an earlier, un-cleared "Show Fit Heatmap" click -- that
+  // combination is what produced a body colored red/green/blue from
+  // shoulder to ankle PLUS the actual (correctly leg-shaped) garment mesh
+  // layered on top, visually merging into what looked like one giant
+  // one-piece garment instead of the intended body+separate-garment view.
+  // showFitHeatmap() only ever touches `mesh`, never `garmentMesh`, so
+  // nothing already cleared this; rebuild from the cached raw avatar
+  // vertices/faces (not via showMesh(), which has its own side effects --
+  // regenerating modesty shorts, clearing the garment this function is
+  // about to set -- wrong for this one case).
+  if (lastAvatarVertices && lastAvatarFaces) {
+    if (mesh) {
+      scene.remove(mesh);
+      mesh.geometry.dispose();
+      mesh.material.dispose();
+    }
+    mesh = new THREE.Mesh(bodyGeometryFrom(lastAvatarVertices, lastAvatarFaces), bodyMaterial());
+    scene.add(mesh);
+  }
+
+  if (garmentMesh) {
+    scene.remove(garmentMesh);
+    garmentMesh.geometry.dispose();
+    garmentMesh.material.dispose();
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(vertices.length * 3);
+  const vcolors = new Float32Array(vertices.length * 3);
+  for (let i = 0; i < vertices.length; i++) {
+    positions[i * 3] = vertices[i][0];
+    positions[i * 3 + 1] = vertices[i][1];
+    positions[i * 3 + 2] = vertices[i][2];
+    vcolors[i * 3] = colors[i][0] / 255;
+    vcolors[i * 3 + 1] = colors[i][1] / 255;
+    vcolors[i * 3 + 2] = colors[i][2] / 255;
+  }
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(vcolors, 3));
+
+  const indices = new Uint32Array(faces.length * 3);
+  for (let i = 0; i < faces.length; i++) {
+    indices[i * 3] = faces[i][0];
+    indices[i * 3 + 1] = faces[i][1];
+    indices[i * 3 + 2] = faces[i][2];
+  }
+  geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+  geometry.computeVertexNormals();
+
+  garmentMesh = new THREE.Mesh(geometry, buildGarmentMaterial(garmentMode));
+  scene.add(garmentMesh);
+
+  // The modesty shorts exist only to cover the bare avatar -- once a real
+  // garment is draped, they have nothing to do but poke through it as a
+  // stray rectangle, so hide them while a garment is shown.
+  if (modestyMesh) modestyMesh.visible = false;
+}
+
+function applyGarmentMode() {
+  if (!garmentMesh || !garmentGeomCache) return;
+  garmentMesh.material.dispose();
+  garmentMesh.material = buildGarmentMaterial(garmentMode);
+}
+
+function removeGarment() {
+  clearOutfitBottomMesh();
+  if (garmentMesh) {
+    scene.remove(garmentMesh);
+    garmentMesh.geometry.dispose();
+    garmentMesh.material.dispose();
+    garmentMesh = null;
+  }
+  garmentGeomCache = null;
+  if (modestyMesh) modestyMesh.visible = true;
+  document.getElementById("removeGarmentBtn").style.display = "none";
+  document.getElementById("legend").style.display = "none";
+  document.getElementById("garmentStats").innerHTML = "";
+  document.getElementById("garmentStatus").textContent = "";
+}
+
+// =========================================================
+// Multi-pose fit check viewer
+// =========================================================
+// Each pose from /api/drape_pose_check carries its OWN posed body + its own
+// heatmap-colored garment (see main.py's _drape_pose_check) -- this section
+// lets the user actually look at each one, not just read its fit_label as
+// text. Deliberately does NOT touch lastAvatarVertices/lastAvatarFaces or
+// garmentGeomCache (those hold the ORIGINAL single-pose drape), so
+// restoreMainView() below can always bring that back exactly as it was,
+// however many pose variants were inspected in between.
+let activePose = null;
+
+function showPoseView(poseEntry) {
+  activePose = poseEntry.pose;
+  clearOutfitBottomMesh();
+
+  if (mesh) {
+    scene.remove(mesh);
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+  }
+  mesh = new THREE.Mesh(bodyGeometryFrom(poseEntry.body.vertices, poseEntry.body.faces), bodyMaterial());
+  scene.add(mesh);
+  if (modestyMesh) modestyMesh.visible = false; // a garment is always shown in this view
+
+  if (garmentMesh) {
+    scene.remove(garmentMesh);
+    garmentMesh.geometry.dispose();
+    garmentMesh.material.dispose();
+  }
+  const geometry = new THREE.BufferGeometry();
+  const { vertices, faces, colors } = poseEntry.garment;
+  const positions = new Float32Array(vertices.length * 3);
+  const vcolors = new Float32Array(vertices.length * 3);
+  for (let i = 0; i < vertices.length; i++) {
+    positions[i * 3] = vertices[i][0];
+    positions[i * 3 + 1] = vertices[i][1];
+    positions[i * 3 + 2] = vertices[i][2];
+    vcolors[i * 3] = colors[i][0] / 255;
+    vcolors[i * 3 + 1] = colors[i][1] / 255;
+    vcolors[i * 3 + 2] = colors[i][2] / 255;
+  }
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(vcolors, 3));
+  const indices = new Uint32Array(faces.length * 3);
+  for (let i = 0; i < faces.length; i++) {
+    indices[i * 3] = faces[i][0];
+    indices[i * 3 + 1] = faces[i][1];
+    indices[i * 3 + 2] = faces[i][2];
+  }
+  geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+  geometry.computeVertexNormals();
+  // Always heatmap-colored here, regardless of the main garmentMode toggle
+  // -- the whole point of this view is comparing drape tightness across
+  // poses, which only the heatmap coloring shows.
+  garmentMesh = new THREE.Mesh(geometry, buildGarmentMaterial("heatmap"));
+  scene.add(garmentMesh);
+
+  highlightActivePoseButton();
+}
+
+function restoreMainView() {
+  activePose = null;
+  clearOutfitBottomMesh();
+  if (lastAvatarVertices && lastAvatarFaces) {
+    if (mesh) {
+      scene.remove(mesh);
+      mesh.geometry.dispose();
+      mesh.material.dispose();
+    }
+    mesh = new THREE.Mesh(bodyGeometryFrom(lastAvatarVertices, lastAvatarFaces), bodyMaterial());
+    scene.add(mesh);
+  }
+  if (garmentGeomCache) {
+    showGarment(garmentGeomCache.vertices, garmentGeomCache.faces, garmentGeomCache.colors);
+    applyGarmentMode();
+  } else if (modestyMesh) {
+    modestyMesh.visible = true;
+  }
+  highlightActivePoseButton();
+}
+
+function highlightActivePoseButton() {
+  document.querySelectorAll(".poseBtn").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.pose === activePose);
+  });
+  const backBtn = document.getElementById("poseBackBtn");
+  if (backBtn) backBtn.classList.toggle("active", activePose === null);
 }
 
 // Simple procedural "shorts" covering hip-to-upper-thigh, sized from this
@@ -245,6 +785,12 @@ let currentSessionId = null;
 let pollTimer = null;
 let qrInstance = null;
 
+// Whatever avatar is currently on screen, regardless of which path put it
+// there (QR/session capture, direct-upload, or a logged-in user's saved
+// scan) -- the fit-heatmap request needs this directly since a saved scan
+// never goes through the session mechanism at all (see tryOnGarment()).
+let currentScanResult = null;
+
 async function startSession() {
   document.getElementById("pollStatus").innerHTML = '<span class="dot-pulse"></span>Creating session...';
   document.getElementById("qrcode").innerHTML = "";
@@ -280,6 +826,25 @@ async function pollSession() {
   if (!currentSessionId) return;
   try {
     const res = await fetch(`/api/session/${currentSessionId}/result`);
+
+    // fetch() only rejects on a network failure, not on a non-2xx status --
+    // a 404 (session unknown, e.g. the server restarted and its in-memory
+    // session store was wiped) has to be checked explicitly, or this falls
+    // through both branches below and silently re-polls the same dead
+    // session forever instead of recovering.
+    if (!res.ok) {
+      clearInterval(pollTimer);
+      if (res.status === 404) {
+        document.getElementById("pollStatus").innerHTML =
+          '<span class="dot-pulse"></span>Session expired (server restarted) -- getting a new QR code...';
+        startSession();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        document.getElementById("pollStatus").textContent = "❌ Error: " + (err.detail || `Server error (${res.status})`);
+      }
+      return;
+    }
+
     const data = await res.json();
 
     if (data.status === "done") {
@@ -287,6 +852,9 @@ async function pollSession() {
       document.getElementById("pollStatus").textContent = "✅ Received from phone.";
       showMesh(data.vertices, data.faces);
       renderMeasurements(data.measurements);
+      currentScanResult = { measurements: data.measurements, betas: data.betas, height_cm: data.height_cm };
+      saveScanToAccount(data.measurements, data.betas, data.height_cm);
+      recommendSize(document.getElementById("pbdProductSelect").value);
     } else if (data.status === "error") {
       clearInterval(pollTimer);
       document.getElementById("pollStatus").textContent = "❌ Error: " + data.detail;
@@ -299,7 +867,10 @@ async function pollSession() {
 document.getElementById("newSessionBtn").addEventListener("click", startSession);
 
 // =========================================================
-// Direct (same-device) generation, for testing without a phone
+// Direct (same-device) generation, for testing without a phone --
+// submits into the SAME session mechanism (not a separate code path), so
+// the existing poll loop picks up the result and garment try-on works
+// identically regardless of how the photos got in.
 // =========================================================
 
 async function generate() {
@@ -313,6 +884,10 @@ async function generate() {
     status.textContent = "Please select both a front and side photo.";
     return;
   }
+  if (!currentSessionId) {
+    status.textContent = "No active session yet -- try again in a moment.";
+    return;
+  }
 
   const form = new FormData();
   form.append("front", frontFile);
@@ -323,14 +898,13 @@ async function generate() {
   status.textContent = "Generating — segmentation + measurement prediction + 3D fitting takes ~15-30s...";
 
   try {
-    const res = await fetch(API_URL, { method: "POST", body: form });
+    const res = await fetch(`/api/session/${currentSessionId}/submit`, { method: "POST", body: form });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.detail || `Server error (${res.status})`);
     }
-    const data = await res.json();
-    showMesh(data.vertices, data.faces);
-    renderMeasurements(data.measurements);
+    // The existing pollSession() interval (already running from startSession())
+    // will pick up the result and call showMesh()/renderMeasurements() itself.
     status.textContent = "Done.";
   } catch (e) {
     status.textContent = "Error: " + e.message;
@@ -341,8 +915,744 @@ async function generate() {
 
 document.getElementById("generateBtn").addEventListener("click", generate);
 
+// =========================================================
+// Garment picker + try-on
+// =========================================================
+
+let FABRIC_CATALOG = {}; // {"top": {fabrics, sizes}, "bottom": {fabrics, sizes}} from /api/fabrics
+
+async function loadFabrics() {
+  FABRIC_CATALOG = await fetch("/api/fabrics").then(r => r.json());
+  populateFabricAndSizeOptions();
+}
+
+function populateFabricAndSizeOptions() {
+  const kind = document.getElementById("garmentKindSelect").value;
+  const catalog = FABRIC_CATALOG[kind];
+  if (!catalog) return;
+
+  const fabricSelect = document.getElementById("fabricSelect");
+  fabricSelect.innerHTML = Object.entries(catalog.fabrics)
+    .map(([key, f]) => `<option value="${key}">${f.label}</option>`)
+    .join("");
+  const sizeSelect = document.getElementById("sizeSelect");
+  sizeSelect.innerHTML = catalog.sizes.map(s => `<option value="${s}">${s}</option>`).join("");
+
+  // Bottoms are sized by waist measurement in inches (28/30/.../40, as
+  // sold in stores), not letter sizes like tops -- labeling it plainly so
+  // "32" isn't ambiguous.
+  document.getElementById("sizeLabel").textContent = kind === "bottom" ? "Waist size (inches)" : "Size";
+}
+
+document.getElementById("garmentKindSelect").addEventListener("change", populateFabricAndSizeOptions);
+
+async function tryOnGarment() {
+  if (!currentScanResult) {
+    document.getElementById("garmentStatus").textContent = "Generate or load an avatar first.";
+    return;
+  }
+  const garmentKind = document.getElementById("garmentKindSelect").value;
+  const fabricKey = document.getElementById("fabricSelect").value;
+  const size = document.getElementById("sizeSelect").value;
+  const status = document.getElementById("garmentStatus");
+  const btn = document.getElementById("tryOnBtn");
+
+  btn.disabled = true;
+  status.textContent = "Computing fit heatmap from your measurements...";
+
+  try {
+    const res = await fetch("/api/fit_heatmap_by_fabric", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fabric_key: fabricKey, size, garment_kind: garmentKind,
+        measurements: currentScanResult.measurements,
+        betas: currentScanResult.betas,
+        height_cm: currentScanResult.height_cm,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Server error (${res.status})`);
+    }
+    const data = await res.json();
+    showFitHeatmap(data.vertices, data.faces, data.colors);
+
+    // The modesty cylinder sits right over the waist-to-thigh band --
+    // exactly the region a bottoms heatmap needs to show, so it would
+    // otherwise cover up the waist/hip/thigh colors entirely. It's fine
+    // left in place for a top's heatmap (chest/shoulder/sleeve, well above
+    // it), so only hide it for "bottom".
+    if (modestyMesh) modestyMesh.visible = garmentKind !== "bottom";
+
+    document.getElementById("removeGarmentBtn").style.display = "block";
+    document.getElementById("legend").style.display = "flex";
+    const scores = data.region_scores || {};
+    const tolerance = data.tolerance_cm ?? 2;
+    const scoredParts = Object.keys(scores);
+    let rows;
+    if (scoredParts.length === 0) {
+      rows = `<tr><td colspan="2">No comparable measurements for this garment/fabric combination.</td></tr>`;
+    } else {
+      rows = scoredParts.map((part) => {
+        const diff = scores[part];
+        const verdict = diff < -tolerance ? "tight" : diff > tolerance ? "loose" : "good fit";
+        const sign = diff > 0 ? "+" : "";
+        return `<tr><td>${part}</td><td>${sign}${diff.toFixed(1)} cm (${verdict})</td></tr>`;
+      }).join("");
+    }
+    document.getElementById("garmentStats").innerHTML = `
+      <div style="margin-bottom:6px;color:#8b949e;">Fabric: ${data.fabric_label || "-"}</div>
+      <table>${rows}</table>`;
+    status.textContent = "Done.";
+  } catch (e) {
+    status.textContent = "Error: " + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById("tryOnBtn").addEventListener("click", tryOnGarment);
+document.getElementById("removeGarmentBtn").addEventListener("click", () => clearFitHeatmap(false));
+
+// =========================================================
+// Realistic-look toggle + fabric color swatches
+// =========================================================
+
+function buildSwatches() {
+  const row = document.getElementById("swatchRow");
+  row.innerHTML = "";
+  for (const color of FABRIC_SWATCHES) {
+    const el = document.createElement("div");
+    el.className = "swatch" + (color === garmentFabricColor ? " active" : "");
+    el.style.background = color;
+    el.title = color;
+    el.addEventListener("click", () => {
+      garmentFabricColor = color;
+      buildSwatches();
+      if (garmentMesh && garmentMode === "realistic") {
+        garmentMesh.material.color.set(garmentFabricColor);
+      }
+    });
+    row.appendChild(el);
+  }
+}
+buildSwatches();
+
+document.getElementById("realisticToggle").addEventListener("change", (e) => {
+  garmentMode = e.target.checked ? "realistic" : "heatmap";
+  applyGarmentMode();
+});
+
+// =========================================================
+// Accounts: signup/login, "use saved measurements or take a new photo",
+// and saving a completed scan (from either capture path above) to the
+// logged-in account.
+// =========================================================
+
+let AUTH_TOKEN = localStorage.getItem("authToken");
+let authMode = "login";
+let pendingSavedScan = null; // cached GET /api/auth/scan result, until "Use saved" is clicked
+
+function authHeaders() {
+  return AUTH_TOKEN ? { "Authorization": `Bearer ${AUTH_TOKEN}` } : {};
+}
+
+function showAuthGate() {
+  document.getElementById("userBar").style.display = "none";
+  document.getElementById("authGate").style.display = "block";
+  document.getElementById("appContent").style.display = "none";
+}
+
+function showApp() {
+  const username = localStorage.getItem("authUsername") || "";
+  document.getElementById("userBar").style.display = "flex";
+  document.getElementById("userBarLabel").textContent = username ? `Signed in as ${username}` : "";
+  document.getElementById("authGate").style.display = "none";
+  document.getElementById("appContent").style.display = "block";
+}
+
+function startCaptureFlow() {
+  document.getElementById("welcomeBackSection").style.display = "none";
+  document.getElementById("captureSection").style.display = "block";
+  startSession();
+  loadFabrics();
+}
+
+function showWelcomeBack() {
+  document.getElementById("welcomeBackSection").style.display = "block";
+  document.getElementById("captureSection").style.display = "none";
+}
+
+async function checkExistingSession() {
+  if (!AUTH_TOKEN) {
+    showAuthGate();
+    return;
+  }
+  try {
+    const res = await fetch("/api/auth/scan", { headers: authHeaders() });
+    if (res.status === 401) {
+      localStorage.removeItem("authToken");
+      localStorage.removeItem("authUsername");
+      AUTH_TOKEN = null;
+      showAuthGate();
+      return;
+    }
+    showApp();
+    if (res.ok) {
+      pendingSavedScan = await res.json();
+      showWelcomeBack();
+    } else {
+      startCaptureFlow(); // 404 -- no saved scan yet for this account
+    }
+  } catch (e) {
+    showAuthGate();
+  }
+}
+
+document.getElementById("useSavedBtn").addEventListener("click", () => {
+  if (!pendingSavedScan) return;
+  document.getElementById("welcomeBackSection").style.display = "none";
+  showMesh(pendingSavedScan.vertices, pendingSavedScan.faces);
+  renderMeasurements(pendingSavedScan.measurements);
+  currentScanResult = {
+    measurements: pendingSavedScan.measurements,
+    betas: pendingSavedScan.betas,
+    height_cm: pendingSavedScan.height_cm,
+  };
+  loadFabrics();
+  recommendSize(document.getElementById("pbdProductSelect").value);
+});
+
+document.getElementById("takeNewPhotoBtn").addEventListener("click", startCaptureFlow);
+
+function setAuthMode(mode) {
+  authMode = mode;
+  document.getElementById("authModeLabel").textContent = mode === "login" ? "Log in" : "Sign up";
+  document.getElementById("authSubmitBtn").textContent = mode === "login" ? "Log in" : "Sign up";
+  document.getElementById("authSwitchText").innerHTML = mode === "login"
+    ? 'Don\'t have an account? <a id="authSwitchLink">Sign up</a>'
+    : 'Already have an account? <a id="authSwitchLink">Log in</a>';
+  document.getElementById("authError").textContent = "";
+  // innerHTML above destroys the old <a>, so its listener has to be
+  // re-attached to the newly created element each time.
+  document.getElementById("authSwitchLink").addEventListener(
+    "click", () => setAuthMode(mode === "login" ? "signup" : "login"),
+  );
+}
+
+async function authSubmit() {
+  const username = document.getElementById("authUsername").value.trim();
+  const password = document.getElementById("authPassword").value;
+  const errorEl = document.getElementById("authError");
+  const btn = document.getElementById("authSubmitBtn");
+
+  if (!username || !password) {
+    errorEl.textContent = "Enter a username and password.";
+    return;
+  }
+
+  const form = new FormData();
+  form.append("username", username);
+  form.append("password", password);
+
+  btn.disabled = true;
+  errorEl.textContent = "";
+  try {
+    const endpoint = authMode === "login" ? "/api/auth/login" : "/api/auth/signup";
+    const res = await fetch(endpoint, { method: "POST", body: form });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.detail || `Server error (${res.status})`);
+    }
+    AUTH_TOKEN = data.token;
+    localStorage.setItem("authToken", AUTH_TOKEN);
+    localStorage.setItem("authUsername", username);
+    showApp();
+    if (data.has_saved_scan) {
+      const savedRes = await fetch("/api/auth/scan", { headers: authHeaders() });
+      pendingSavedScan = await savedRes.json();
+      showWelcomeBack();
+    } else {
+      startCaptureFlow();
+    }
+  } catch (e) {
+    errorEl.textContent = e.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById("authSubmitBtn").addEventListener("click", authSubmit);
+
+document.getElementById("logoutBtn").addEventListener("click", () => {
+  localStorage.removeItem("authToken");
+  localStorage.removeItem("authUsername");
+  AUTH_TOKEN = null;
+  pendingSavedScan = null;
+  if (pollTimer) clearInterval(pollTimer);
+  document.getElementById("authUsername").value = "";
+  document.getElementById("authPassword").value = "";
+  showAuthGate();
+});
+
+async function saveScanToAccount(measurements, betas, height_cm) {
+  if (!AUTH_TOKEN) return;
+  try {
+    await fetch("/api/auth/save_scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ measurements, betas, height_cm }),
+    });
+  } catch (e) {
+    // Best-effort -- the capture already succeeded and is showing locally
+    // either way, so a failed save here shouldn't interrupt the user.
+  }
+}
+
+// =========================================================
+// Physics drape preview -- see backend/avatar/garment_export.py's
+// engine="pbd"/"warp" and third_party/GarmentCode/dress_dataset/
+// {pbd,warp,generic}_drape.py / generic_garment.py. Two sources of
+// draped garment here, grouped separately in the picker: this project's 3
+// real, screenshot-calibrated Nobero garments, and a much larger set of
+// GENERIC fabric/fit combinations (generic_top_*/generic_bottom_* product
+// keys) built from backend/measurement/fabric_ease_reference.py's standard-
+// body + fabric-ease table instead of a real product's own size guide --
+// same real GarmentCode pattern-generation + simulator pipeline either way,
+// just a different source for the target measurements. Not every product
+// /api/garments knows about shows up here at all: some (the Amazon graphic
+// tee, the Shasmi dress) only have real size-guide data for the measurement
+// heatmap above, no physics-drape pattern for this section.
+// Independent of currentSessionId (same reason the fit-heatmap request had
+// to be): "use my saved measurements" never creates a session, so this
+// posts to the stateless /api/drape endpoint using currentScanResult
+// instead, same as tryOnGarment() does for the heatmap.
+// =========================================================
+
+const PBD_NOBERO_PRODUCTS = [
+  "nobero_polo", "nobero_sweatshirt", "nobero_cargo_pants", "shasmi_maxi_dress",
+  "tshirt_cotton_jersey", "shirt_cotton_poplin", "trousers_cotton_twill",
+  "jeans_stretch_denim", "leggings_nylon_spandex", "maxi_cotton_spandex",
+];
+let pbdGarments = {};
+
+async function loadPbdProducts() {
+  pbdGarments = await fetch("/api/garments").then(r => r.json());
+  const select = document.getElementById("pbdProductSelect");
+
+  // Curated, real products only (Nobero + the richer-catalog additions) --
+  // the old "Generic fabric -- top/bottom" auto-generated catalog (19
+  // entries built from a standard reference body + a fabric's own flat
+  // ease number, see generic_garment.py) is deliberately left out of this
+  // dropdown now: every one of THESE products has a real size chart and
+  // has actually been drape-tested, unlike the generic ones.
+  const nobero = PBD_NOBERO_PRODUCTS.filter(key => pbdGarments[key]);
+  select.innerHTML = nobero.map(key => `<option value="${key}">${pbdGarments[key].label}</option>`).join("");
+  loadPbdSizes();
+  loadOutfitProducts();
+}
+
+async function loadPbdSizes() {
+  const productKey = document.getElementById("pbdProductSelect").value;
+  const sizes = pbdGarments[productKey]?.sizes || [];
+  document.getElementById("pbdSizeSelect").innerHTML =
+    sizes.map(s => `<option value="${s}">${s}</option>`).join("");
+
+  await recommendSize(productKey);
+}
+
+// Unlike the physics-based fit checks (drape, pose-check), this is pure
+// arithmetic server-side (no body mesh, no simulation) -- see garment_
+// export.recommend_best_size -- so it runs automatically on every product
+// change rather than needing its own button, and finishes before the user
+// would even notice a delay.
+async function recommendSize(productKey) {
+  const el = document.getElementById("sizeRecommendation");
+  if (!currentScanResult) {
+    el.textContent = "";
+    return;
+  }
+  try {
+    const res = await fetch("/api/recommend_size", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ product_key: productKey, measurements: currentScanResult.measurements }),
+    });
+    if (!res.ok) { el.textContent = ""; return; }
+    const data = await res.json();
+
+    // Mark the recommended option and auto-select it -- the user can still
+    // freely change it afterward, this is a starting suggestion, not a lock.
+    const sizeSelect = document.getElementById("pbdSizeSelect");
+    const bySize = Object.fromEntries(data.sizes.map(s => [s.size, s]));
+    [...sizeSelect.options].forEach(opt => {
+      const s = bySize[opt.value];
+      const tag = s ? `${s.fit_label}, ${s.fit_confidence} confidence` : "";
+      opt.textContent = (opt.value === data.recommended_size)
+        ? `${opt.value} — recommended (${tag})`
+        : (s ? `${opt.value} (${tag})` : opt.value);
+    });
+    sizeSelect.value = data.recommended_size;
+    lastRecommendedSize = data.recommended_size;
+
+    const rec = bySize[data.recommended_size];
+    const recColor = { "Snug": "#ff7b72", "Good fit": "#7ee787", "Loose": "#79c0ff" }[rec?.fit_label] || "#8b949e";
+    // fit_confidence here flags the "between sizes" case explicitly --
+    // several sizes can all cross into "Good fit" while only barely
+    // clearing the tolerance band (Medium/Low confidence), which is
+    // genuinely useful to say out loud rather than silently picking one.
+    const confNote = rec?.fit_confidence && rec.fit_confidence !== "High"
+      ? ` (${rec.fit_confidence} confidence -- you may be between sizes)` : "";
+    el.innerHTML = rec?.fit_label === "Good fit"
+      ? `<span style="color:${recColor}">Recommended: size ${data.recommended_size}${confNote}</span>`
+      : `<span style="color:${recColor}">Closest available: size ${data.recommended_size} (${rec?.fit_label}) — no size in this product is a perfect fit for your measurements</span>`;
+  } catch (e) {
+    el.textContent = "";
+  }
+}
+
+document.getElementById("pbdProductSelect").addEventListener("change", loadPbdSizes);
+
+let lastDrapeRequest = null;  // {productKey, size} of the last successful drape, for the pose-check follow-up call
+let lastPoseCheckResult = null;  // last /api/drape_pose_check response, for the pose-selector buttons
+let lastRecommendedSize = null;  // last /api/recommend_size result, so the pose-check banner can cross-reference it
+                                  // ("you're checking S, but XL was recommended") instead of the two features
+                                  // talking past each other -- see the "confidence" mixup this was built to fix.
+
+document.getElementById("pbdDrapeBtn").addEventListener("click", async () => {
+  if (!currentScanResult) {
+    document.getElementById("pbdStatus").textContent = "Generate or load an avatar first.";
+    return;
+  }
+  const productKey = document.getElementById("pbdProductSelect").value;
+  const size = document.getElementById("pbdSizeSelect").value;
+  const engine = document.getElementById("pbdEngineSelect").value;
+  const status = document.getElementById("pbdStatus");
+  const btn = document.getElementById("pbdDrapeBtn");
+
+  btn.disabled = true;
+  status.textContent = engine === "warp"
+    ? "Running the real GPU cloth simulator (WSL2) -- this takes roughly 20-60s..."
+    : "Running real cloth simulation -- this takes roughly a minute...";
+
+  try {
+    const res = await fetch("/api/drape", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        product_key: productKey, size, engine,
+        measurements: currentScanResult.measurements,
+        betas: currentScanResult.betas,
+        height_cm: currentScanResult.height_cm,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Server error (${res.status})`);
+    }
+    const data = await res.json();
+    showGarment(data.vertices, data.faces, data.colors);
+    document.getElementById("pbdRemoveBtn").style.display = "block";
+    document.getElementById("pbdLegend").style.display = "block";
+    // The pose-robustness check re-runs the real GPU sim at two extra arm
+    // angles -- only meaningful (and only backend-supported) for the warp
+    // engine, which is what that calibration was actually done against.
+    document.getElementById("poseCheckBtn").style.display = engine === "warp" ? "block" : "none";
+    document.getElementById("poseCheckStatus").innerHTML = "";
+    resetPoseCheckResults(); // a fresh drape invalidates any earlier pose-check results (different product/size/body)
+    lastDrapeRequest = { productKey, size };
+    // fit_label (Snug/Good fit/Loose) is the reliable cross-size signal --
+    // gap_cm_mean, which it's derived from, tested monotonic with size
+    // across every size checked this session. The heatmap COLOR on the
+    // garment itself is deliberately NOT calibrated to be comparable across
+    // sizes (see garment_export.py's comment on why real cloth folding
+    // defeats that) -- it only shows relative tight/loose spots within this
+    // one drape (see #pbdLegend above), so fit_label is what actually
+    // answers "does this size fit."
+    const fitColor = { "Snug": "#ff7b72", "Good fit": "#7ee787", "Loose": "#79c0ff" }[data.stats.fit_label] || "#8b949e";
+    // fit_confidence is a SEPARATE signal from fit_label, not blended into
+    // it -- how close this garment's achieved ease sits to the nearest
+    // Snug/Good-fit or Good-fit/Loose boundary, not whether it's good news.
+    // A size can be confidently Snug (clearly, decisively too tight) just
+    // as validly as confidently Good fit -- shown in parentheses so it's
+    // never mistaken for an endorsement, the same mixup the pose-check's
+    // old "Confidence" label caused.
+    const confNote = data.stats.fit_confidence ? ` (${data.stats.fit_confidence} confidence)` : "";
+    status.innerHTML = `<b style="color:${fitColor}">Fit: ${data.stats.fit_label}</b>${confNote} &middot; ` +
+      `Gap to body: mean ${data.stats.gap_cm_mean.toFixed(1)}cm, max ${data.stats.gap_cm_max.toFixed(1)}cm.`;
+  } catch (e) {
+    status.textContent = "Error: " + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById("pbdRemoveBtn").addEventListener("click", () => {
+  removeGarment();
+  document.getElementById("pbdRemoveBtn").style.display = "none";
+  document.getElementById("pbdLegend").style.display = "none";
+  document.getElementById("pbdStatus").textContent = "";
+  document.getElementById("poseCheckBtn").style.display = "none";
+  document.getElementById("poseCheckStatus").innerHTML = "";
+  resetPoseCheckResults();
+});
+
+// No fixed per-pose label here any more -- the backend's own "description"
+// already says what actually varies (arm angle for a top, knee bend for
+// pants; check_fit_pose_robustness picks whichever the garment's kind
+// actually responds to), so the frontend just displays that string as-is.
+
+function resetPoseCheckResults() {
+  document.getElementById("poseCheckResults").style.display = "none";
+  document.getElementById("poseButtonRow").innerHTML = "";
+  document.getElementById("poseConfidenceBanner").innerHTML = "";
+  activePose = null;
+}
+
+document.getElementById("poseCheckBtn").addEventListener("click", async () => {
+  if (!currentScanResult || !lastDrapeRequest) return;
+  const status = document.getElementById("poseCheckStatus");
+  const btn = document.getElementById("poseCheckBtn");
+
+  btn.disabled = true;
+  resetPoseCheckResults();
+  status.textContent = "Re-draping at extra pose variants to check fit robustness -- this takes roughly 60-75s for tops, 100-125s for pants...";
+
+  try {
+    const res = await fetch("/api/drape_pose_check", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        product_key: lastDrapeRequest.productKey, size: lastDrapeRequest.size,
+        measurements: currentScanResult.measurements,
+        betas: currentScanResult.betas,
+        height_cm: currentScanResult.height_cm,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Server error (${res.status})`);
+    }
+    const data = await res.json();
+    status.textContent = "";
+
+    const fitColor = { "Snug": "#ff7b72", "Good fit": "#7ee787", "Loose": "#79c0ff" };
+    const checkedLabel = data.poses[0].fit_label; // "default" pose's verdict, same one shown above before this check ran
+    let banner = `Good-fit confidence: <b>${data.good_fit_confidence}%</b> ` +
+      `<span style="color:#8b949e;font-size:12px;">(estimate)</span>` +
+      `<div style="margin-top:4px;">Verdict stability: <b>${data.confidence}</b> (${data.agreement} poses agree this size is ` +
+      `<b style="color:${fitColor[checkedLabel] || '#8b949e'}">${checkedLabel}</b>) ` +
+      `&middot; click a pose below to see its own avatar, drape, and heatmap</div>` +
+      `<div style="margin-top:4px; color:#8b949e;">Combines fit margin (60%) with the share of tested poses rated Good fit (40%). ` +
+      `A Snug or Loose verdict lowers this score even when that verdict is stable. This is a heuristic estimate.</div>`;
+    if (lastRecommendedSize && lastDrapeRequest && lastRecommendedSize !== lastDrapeRequest.size) {
+      banner += `<div style="margin-top:4px; color:#e3b341;">Your recommended size for this garment is ` +
+        `<b>${lastRecommendedSize}</b>, not ${lastDrapeRequest.size} -- consider checking that size instead.</div>`;
+    }
+    document.getElementById("poseConfidenceBanner").innerHTML = banner;
+
+    // Each button shows and heatmaps that pose's OWN avatar+garment in the
+    // viewer (showPoseView) -- the confidence score above summarizes all
+    // of them (3 for a top, 5 for pants), but any one can be inspected
+    // directly, the same way the single-pose result already could be.
+    lastPoseCheckResult = data;
+    const row = document.getElementById("poseButtonRow");
+    row.innerHTML = "";
+    data.poses.forEach(p => {
+      const b = document.createElement("button");
+      b.className = "poseBtn";
+      b.dataset.pose = p.pose;
+      b.innerHTML = `${p.description}: ` +
+        `<b style="color:${fitColor[p.fit_label] || '#8b949e'}">${p.fit_label}</b>`;
+      b.addEventListener("click", () => showPoseView(p));
+      row.appendChild(b);
+    });
+    document.getElementById("poseCheckResults").style.display = "block";
+  } catch (e) {
+    status.textContent = "Error: " + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById("poseBackBtn").addEventListener("click", restoreMainView);
+
+// =========================================================
+// Full outfit (top + bottom together) -- see backend/avatar/garment_
+// export.py's drape_outfit_on_user: two fully independent single-garment
+// drapes (same body, same pose) composited into one viewer scene, NOT a
+// real cloth-on-cloth simulation between the two pieces. Reuses
+// pbdGarments (populated by loadPbdProducts above) split by kind so only
+// "top"-kind products fill the top dropdown and only "pants"-kind ones
+// fill the bottom dropdown.
+// =========================================================
+
+function loadOutfitProducts() {
+  const tops = PBD_NOBERO_PRODUCTS.filter(key => pbdGarments[key]?.kind === "top");
+  const bottoms = PBD_NOBERO_PRODUCTS.filter(key => pbdGarments[key]?.kind === "pants");
+  document.getElementById("outfitTopSelect").innerHTML =
+    tops.map(key => `<option value="${key}">${pbdGarments[key].label}</option>`).join("");
+  document.getElementById("outfitBottomSelect").innerHTML =
+    bottoms.map(key => `<option value="${key}">${pbdGarments[key].label}</option>`).join("");
+  loadOutfitSizes("Top");
+  loadOutfitSizes("Bottom");
+}
+
+function loadOutfitSizes(slot) {
+  const productKey = document.getElementById(`outfit${slot}Select`).value;
+  const sizes = pbdGarments[productKey]?.sizes || [];
+  document.getElementById(`outfit${slot}SizeSelect`).innerHTML =
+    sizes.map(s => `<option value="${s}">${s}</option>`).join("");
+}
+
+document.getElementById("outfitTopSelect").addEventListener("change", () => loadOutfitSizes("Top"));
+document.getElementById("outfitBottomSelect").addEventListener("change", () => loadOutfitSizes("Bottom"));
+
+// Mirrors showGarment/showPoseView's own vertex/face/color-buffer loop
+// (not pulled into a shared helper -- see those two for why this project
+// keeps this duplicated rather than abstracting a third copy out early).
+function coloredGarmentMesh(vertices, faces, colors) {
+  const geometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(vertices.length * 3);
+  const vcolors = new Float32Array(vertices.length * 3);
+  for (let i = 0; i < vertices.length; i++) {
+    positions[i * 3] = vertices[i][0];
+    positions[i * 3 + 1] = vertices[i][1];
+    positions[i * 3 + 2] = vertices[i][2];
+    vcolors[i * 3] = colors[i][0] / 255;
+    vcolors[i * 3 + 1] = colors[i][1] / 255;
+    vcolors[i * 3 + 2] = colors[i][2] / 255;
+  }
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(vcolors, 3));
+  const indices = new Uint32Array(faces.length * 3);
+  for (let i = 0; i < faces.length; i++) {
+    indices[i * 3] = faces[i][0];
+    indices[i * 3 + 1] = faces[i][1];
+    indices[i * 3 + 2] = faces[i][2];
+  }
+  geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+  geometry.computeVertexNormals();
+  return new THREE.Mesh(geometry, buildGarmentMaterial("heatmap"));
+}
+
+// Takes over BOTH garment slots plus the body -- this is the one place in
+// the viewer that renders a top and a bottom at the same time, so unlike
+// every single-garment entry point it does NOT call clearOutfitBottomMesh
+// (that would just remove what it's about to add back).
+function showOutfitResult(data) {
+  if (mesh) {
+    scene.remove(mesh);
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+  }
+  mesh = new THREE.Mesh(bodyGeometryFrom(data.body.vertices, data.body.faces), bodyMaterial());
+  scene.add(mesh);
+  if (modestyMesh) modestyMesh.visible = false;
+
+  if (garmentMesh) {
+    scene.remove(garmentMesh);
+    garmentMesh.geometry.dispose();
+    garmentMesh.material.dispose();
+  }
+  garmentMesh = coloredGarmentMesh(data.top.vertices, data.top.faces, data.top.colors);
+  scene.add(garmentMesh);
+  garmentGeomCache = null; // this slot now holds the outfit's top, not a single pbd-section drape
+
+  if (bottomGarmentMesh) {
+    scene.remove(bottomGarmentMesh);
+    bottomGarmentMesh.geometry.dispose();
+    bottomGarmentMesh.material.dispose();
+  }
+  bottomGarmentMesh = coloredGarmentMesh(data.bottom.vertices, data.bottom.faces, data.bottom.colors);
+  scene.add(bottomGarmentMesh);
+}
+
+function removeOutfit() {
+  clearOutfitBottomMesh();
+  if (garmentMesh) {
+    scene.remove(garmentMesh);
+    garmentMesh.geometry.dispose();
+    garmentMesh.material.dispose();
+    garmentMesh = null;
+  }
+  if (mesh) {
+    scene.remove(mesh);
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+  }
+  if (lastAvatarVertices && lastAvatarFaces) {
+    mesh = new THREE.Mesh(bodyGeometryFrom(lastAvatarVertices, lastAvatarFaces), bodyMaterial());
+    scene.add(mesh);
+  }
+  if (modestyMesh) modestyMesh.visible = true;
+  document.getElementById("outfitStatus").textContent = "";
+}
+
+document.getElementById("outfitDrapeBtn").addEventListener("click", async () => {
+  if (!currentScanResult) {
+    document.getElementById("outfitStatus").textContent = "Generate or load an avatar first.";
+    return;
+  }
+  const topKey = document.getElementById("outfitTopSelect").value;
+  const topSize = document.getElementById("outfitTopSizeSelect").value;
+  const bottomKey = document.getElementById("outfitBottomSelect").value;
+  const bottomSize = document.getElementById("outfitBottomSizeSelect").value;
+  const engine = document.getElementById("outfitEngineSelect").value;
+  const tuckIn = document.getElementById("outfitTuckInToggle").checked;
+  const status = document.getElementById("outfitStatus");
+  const btn = document.getElementById("outfitDrapeBtn");
+
+  btn.disabled = true;
+  status.textContent = engine === "warp"
+    ? "Running two real GPU cloth simulations (top + bottom) -- this takes roughly 40-120s..."
+    : "Draping top + bottom together -- this takes roughly a minute...";
+
+  try {
+    const res = await fetch("/api/drape_outfit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        top_product_key: topKey, top_size: topSize,
+        bottom_product_key: bottomKey, bottom_size: bottomSize,
+        engine, tuck_in: tuckIn,
+        measurements: currentScanResult.measurements,
+        betas: currentScanResult.betas,
+        height_cm: currentScanResult.height_cm,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Server error (${res.status})`);
+    }
+    const data = await res.json();
+    showOutfitResult(data);
+    document.getElementById("outfitRemoveBtn").style.display = "block";
+
+    const fitColor = { "Snug": "#ff7b72", "Good fit": "#7ee787", "Loose": "#79c0ff" };
+    const top = data.top.stats, bottom = data.bottom.stats;
+    status.innerHTML =
+      `Top: <b style="color:${fitColor[top.fit_label] || '#8b949e'}">${top.fit_label}</b> ` +
+      `(${top.fit_confidence} confidence) &middot; ` +
+      `Bottom: <b style="color:${fitColor[bottom.fit_label] || '#8b949e'}">${bottom.fit_label}</b> ` +
+      `(${bottom.fit_confidence} confidence)`;
+  } catch (e) {
+    status.textContent = "Error: " + e.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById("outfitRemoveBtn").addEventListener("click", () => {
+  removeOutfit();
+  document.getElementById("outfitRemoveBtn").style.display = "none";
+});
+
 initViewer();
-startSession();
+setAuthMode("login");
+checkExistingSession();
+loadPbdProducts();
 </script>
 </body>
 </html>

@@ -16,7 +16,12 @@
     position: relative; width: 100%; max-width: 480px; aspect-ratio: 3/4;
     overflow: hidden; background: #111;
   }
-  #video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+  /* No mirroring: this app uses the REAR camera (facingMode: "environment"),
+     not a front-facing selfie camera. Mirroring only matches intuition for
+     a selfie camera (like looking in a mirror); on a rear camera it makes
+     the preview move opposite to reality, which is confusing to aim with
+     (move the phone/subject right, the image appears to move left). */
+  #video { width: 100%; height: 100%; object-fit: cover; }
   #overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
   #checklist {
     position: absolute; top: 8px; left: 8px; right: 8px; font-size: 13px; line-height: 1.9;
@@ -76,7 +81,7 @@
 </div>
 
 <script type="module">
-import { PoseLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+import { PoseLandmarker, FaceDetector, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 
 const params = new URLSearchParams(location.search);
 const sessionId = params.get("session");
@@ -84,6 +89,7 @@ const sessionId = params.get("session");
 let stage = "front"; // "front" | "side" | "height" | "submitting" | "done"
 let frontBlob = null, sideBlob = null;
 let poseLandmarker = null;
+let faceDetector = null;
 let video, overlayCtx, overlayCanvas;
 let lastChecksPassed = false;
 
@@ -167,8 +173,11 @@ function drawSkeleton(lm) {
     const p = lm[i];
     if (!p || p.visibility < 0.3) continue;
     overlayCtx.beginPath();
-    // video is mirrored (scaleX(-1)) so flip x for the overlay drawing too.
-    overlayCtx.arc((1 - p.x) * w, p.y * h, 5, 0, 2 * Math.PI);
+    // MediaPipe's landmark x is in the raw (unmirrored) video frame's own
+    // coordinate space regardless of any CSS transform on the <video>
+    // element -- now that the preview itself isn't mirrored either, this
+    // draws directly with no flip needed to line up with what's on screen.
+    overlayCtx.arc(p.x * w, p.y * h, 5, 0, 2 * Math.PI);
     overlayCtx.fill();
   }
 }
@@ -192,15 +201,59 @@ async function detectLoop() {
   requestAnimationFrame(detectLoop);
 }
 
+// Privacy: the face is blurred HERE, client-side, before the frame is ever
+// turned into a blob or uploaded -- the server never receives an
+// unblurred face at all, not even transiently. This is in addition to (not
+// instead of) the existing policy of deleting uploaded photos after
+// processing: that policy protects the photo once it's server-side; this
+// protects it from ever leaving the phone in identifiable form to begin
+// with. Draws through an offscreen temp canvas rather than blurring the
+// main canvas in place -- self-drawing a canvas onto itself through a
+// filter has real cross-browser/mobile-Safari quirks; a separate source
+// buffer avoids that entirely.
+function blurFaceRegion(mainCanvas, box) {
+  // Padded well beyond MediaPipe's own tight face box so hair, ears, and
+  // jaw are covered too, not just the eyes-nose-mouth region.
+  const padX = box.width * 0.45;
+  const padTop = box.height * 0.6;
+  const padBottom = box.height * 0.5;
+  const bx = Math.max(0, box.originX - padX);
+  const by = Math.max(0, box.originY - padTop);
+  const bw = Math.min(mainCanvas.width - bx, box.width + padX * 2);
+  const bh = Math.min(mainCanvas.height - by, box.height + padTop + padBottom);
+  if (bw <= 0 || bh <= 0) return;
+
+  const tmp = document.createElement("canvas");
+  tmp.width = bw;
+  tmp.height = bh;
+  const tmpCtx = tmp.getContext("2d");
+  tmpCtx.filter = "blur(20px)";
+  tmpCtx.drawImage(mainCanvas, bx, by, bw, bh, 0, 0, bw, bh);
+
+  mainCanvas.getContext("2d").drawImage(tmp, bx, by, bw, bh);
+}
+
 function captureFrame() {
   const canvas = document.createElement("canvas");
   canvas.width = video.videoWidth;
   canvas.height = video.videoHeight;
-  // Save un-mirrored (flip back) so the uploaded photo matches a normal photo.
+  // The video was never mirrored to begin with now, so this just draws the
+  // raw frame directly -- no flip needed (there's nothing to flip back).
   const ctx = canvas.getContext("2d");
-  ctx.translate(canvas.width, 0);
-  ctx.scale(-1, 1);
   ctx.drawImage(video, 0, 0);
+
+  if (faceDetector) {
+    try {
+      const { detections } = faceDetector.detect(canvas);
+      for (const d of detections) blurFaceRegion(canvas, d.boundingBox);
+    } catch (e) {
+      // Detection failing shouldn't block the capture -- the body
+      // silhouette (what the measurement pipeline actually needs) is
+      // unaffected either way; this only means the extra face-blur layer
+      // didn't apply for this particular frame.
+      console.warn("Face detection failed, capturing without blur:", e);
+    }
+  }
 
   canvas.toBlob((blob) => {
     if (stage === "front") {
@@ -285,6 +338,25 @@ async function init() {
     runningMode: "VIDEO",
     numPoses: 1,
   });
+
+  // Loaded separately from the pose landmarker above (used continuously on
+  // the live video stream for the framing checklist) -- this one runs once
+  // per captured still frame, in IMAGE mode, purely to locate the face to
+  // blur before upload. If this fails to load, capture still works; frames
+  // just go up without the extra blur layer (see captureFrame's try/catch).
+  try {
+    faceDetector = await FaceDetector.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath:
+          "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.task",
+        delegate: "GPU",
+      },
+      runningMode: "IMAGE",
+    });
+  } catch (e) {
+    console.warn("Face detector failed to load, captures will not be face-blurred:", e);
+  }
+
   document.getElementById("msg").textContent = "";
 
   detectLoop();

@@ -36,6 +36,10 @@ uvicorn
 python-multipart
 pydantic
 
+# ---------- Accounts / storage ----------
+mysql-connector-python
+bcrypt
+
 # ---------- Development ----------
 jupyter
 ipykernel

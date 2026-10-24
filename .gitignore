@@ -3,6 +3,9 @@ venv/
 __pycache__/
 *.pyc
 
+# DB credentials -- never commit (see .env.example for the expected shape)
+.env
+
 # BodyM dataset (public, re-downloadable via aws s3 --no-sign-request)
 data/bodym/
 
@@ -25,3 +28,6 @@ data/garments/mgn/
 
 # Runtime logs
 *.log
+
+# Personal Claude Code settings (per-machine preferences, e.g. remote control) -- not shared with teammates
+.claude/settings.local.json

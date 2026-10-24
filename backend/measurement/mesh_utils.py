@@ -9,6 +9,12 @@ PELVIS = 0
 LEFT_HIP = 1
 RIGHT_HIP = 2
 SPINE1 = 3
+LEFT_KNEE = 4
+RIGHT_KNEE = 5
+LEFT_ANKLE = 7
+RIGHT_ANKLE = 8
+LEFT_FOOT = 10
+RIGHT_FOOT = 11
 NECK = 12
 LEFT_COLLAR = 13
 RIGHT_COLLAR = 14
@@ -33,6 +39,36 @@ ARM_JOINTS = {
     LEFT_WRIST, RIGHT_WRIST,
     LEFT_HAND, RIGHT_HAND,
 }
+
+LEFT_ARM_JOINTS = {LEFT_SHOULDER, LEFT_ELBOW, LEFT_WRIST, LEFT_HAND}
+RIGHT_ARM_JOINTS = {RIGHT_SHOULDER, RIGHT_ELBOW, RIGHT_WRIST, RIGHT_HAND}
+
+
+def get_side_faces(faces, lbs_weights, joint_set, weight_threshold=0.5):
+    """
+    Faces whose vertices are ALL majority-weighted by one specific joint
+    set (e.g. just the left arm's own joints) -- unlike get_torso_faces
+    (which EXCLUDES any face merely touching an arm vertex), this INCLUDES
+    only faces cleanly inside that one limb, so a slicing plane built from
+    that limb's own axis doesn't pick up unrelated geometry: an infinite
+    plane extends past the limb in every direction, and would otherwise
+    also cut through the torso or the opposite limb wherever they happen
+    to lie in the same plane.
+
+    Args:
+        faces: (F, 3) int array of triangle vertex indices.
+        lbs_weights: (V, 24) array of per-vertex joint weights.
+        joint_set: which joints define this limb (e.g. LEFT_ARM_JOINTS).
+        weight_threshold: minimum summed weight for a vertex to count as
+            "this limb".
+
+    Returns:
+        (F', 3) int array containing only this limb's own faces.
+    """
+    weight = lbs_weights[:, list(joint_set)].sum(axis=1)
+    is_member = weight > weight_threshold
+    face_all_member = is_member[faces].all(axis=1)
+    return faces[face_all_member]
 
 
 def get_torso_faces(faces, lbs_weights, arm_weight_threshold=0.5):
@@ -136,6 +172,94 @@ def extract_segments(vertices, faces, plane_y):
             segments.append((points[0], points[1]))
 
     return segments
+
+
+def triangle_plane_intersection_general(v0, v1, v2, plane_point, plane_normal):
+    """Same as triangle_plane_intersection, but for an arbitrary plane
+    (a point on it plus a normal direction) instead of a horizontal
+    Y=const plane. Needed for limb cross-sections: this project's default
+    pose deliberately tilts the arms ~40 degrees from vertical (to match
+    GarmentCode's sleeve patterns), so a horizontal slice through an arm
+    cuts across it at an angle rather than perpendicular to its own axis,
+    stretching the measured ring into a longer ellipse and overstating its
+    true circumference by roughly 1/cos(tilt) (~30% for a 40-degree tilt).
+    Slicing by a plane perpendicular to the limb's own shoulder-to-wrist
+    (or hip-to-ankle) axis avoids that distortion. The legs stay in SMPL's
+    unrotated rest pose (vertical) so measure_level's plain Y-slice remains
+    exact for them; this generalized version is for arms only."""
+    points = []
+
+    edges = [(v0, v1), (v1, v2), (v2, v0)]
+
+    for a, b in edges:
+
+        da = np.dot(a - plane_point, plane_normal)
+        db = np.dot(b - plane_point, plane_normal)
+
+        if abs(da) < 1e-8:
+            points.append(a)
+
+        if da * db < 0:
+            t = da / (da - db)
+            p = a + t * (b - a)
+            points.append(p)
+
+    unique = []
+
+    for p in points:
+
+        if not any(
+            np.linalg.norm(p - q) < 1e-7
+            for q in unique
+        ):
+            unique.append(p)
+
+    return unique
+
+
+def extract_segments_general(vertices, faces, plane_point, plane_normal):
+
+    segments = []
+
+    for face in faces:
+
+        v0 = vertices[face[0]]
+        v1 = vertices[face[1]]
+        v2 = vertices[face[2]]
+
+        points = triangle_plane_intersection_general(
+            v0, v1, v2, plane_point, plane_normal
+        )
+
+        if len(points) == 2:
+            segments.append((points[0], points[1]))
+
+    return segments
+
+
+def measure_plane(vertices, faces, plane_point, plane_normal):
+    """Like measure_level, but for an arbitrary plane. get_contour_info's
+    perimeter is computed from real 3D point-to-point distances, so it's
+    already coordinate-frame independent -- this returns that directly as
+    "circumference" (skips width/depth, which assumed a Y=const plane and
+    an X/Z bounding box; not meaningful for an arbitrarily oriented one)."""
+
+    segments = extract_segments_general(vertices, faces, plane_point, plane_normal)
+
+    contours = build_contours(segments)
+
+    selected = select_largest_contour(contours)
+
+    if selected is None:
+        return None
+
+    perimeter, contour, info = selected
+
+    return {
+        "circumference": perimeter,
+        "num_contours": len(contours),
+        "points": info["points"],
+    }
 
 
 def build_contours(segments, tolerance=1e-4):

@@ -26,11 +26,16 @@ from bodym_validate_real import (  # noqa: E402
     predict_baseline, CANVAS_W, CANVAS_H,
 )
 from smpl_fit import (  # noqa: E402
-    load_smpl_model, forward, scale_to_height, fit_betas, N_FIT_BETAS,
+    load_smpl_model, forward, scale_to_height, fit_betas, N_FIT_BETAS, ALL_TARGET_COLS,
 )
 from mesh_utils import get_torso_faces  # noqa: E402
 
-AVATAR_TARGET_COLS = ["chest", "waist", "hip", "shoulder-breadth", "arm-length"]
+# All 13 BodyM measurements -- the SMPL avatar's shape is now fit against
+# all of them (previously only chest/waist/hip/shoulder-breadth/arm-length),
+# using smpl_fit.py's relative-error-weighted loss so the widely differing
+# scales (wrist ~16cm vs hip ~110cm) don't let the largest measurements
+# dominate the fit.
+AVATAR_TARGET_COLS = ALL_TARGET_COLS
 
 _state = {}
 
@@ -52,6 +57,7 @@ def startup():
     lbs_weights = model.lbs_weights.detach().numpy()
     _state["torso_faces"] = get_torso_faces(faces, lbs_weights)
     _state["faces"] = faces
+    _state["lbs_weights"] = lbs_weights
 
     print("[avatar.pipeline] ready.")
 
@@ -78,6 +84,11 @@ def generate_avatar(front_bytes, side_bytes, height_cm):
           "measurements": {col: value, ...},   # all 13 BodyM measurements
           "vertices": [[x,y,z], ...],           # fitted avatar mesh, cm
           "faces": [[i,j,k], ...],
+          "betas": [b0, ..., b5],               # fitted SMPL shape params --
+                                                  # kept so a later garment-drape
+                                                  # request can reuse this exact
+                                                  # body without re-fitting
+          "height_cm": height_cm,
         }
     """
     if "ref" not in _state:
@@ -111,8 +122,12 @@ def generate_avatar(front_bytes, side_bytes, height_cm):
     model = _state["smpl_model"]
     torso_faces = _state["torso_faces"]
     faces = _state["faces"]
+    lbs_weights = _state["lbs_weights"]
 
-    betas, _ = fit_betas(model, torso_faces, avatar_target, height_cm, n_betas=N_FIT_BETAS)
+    betas, _ = fit_betas(
+        model, torso_faces, avatar_target, height_cm,
+        n_betas=N_FIT_BETAS, lbs_weights=lbs_weights,
+    )
     vertices, _ = forward(model, betas)
     vertices, _ = scale_to_height(vertices, vertices, height_cm)
 
@@ -120,4 +135,6 @@ def generate_avatar(front_bytes, side_bytes, height_cm):
         "measurements": {k: float(v) for k, v in measurements.items()},
         "vertices": vertices.tolist(),
         "faces": faces.tolist(),
+        "betas": np.asarray(betas).tolist(),
+        "height_cm": float(height_cm),
     }
