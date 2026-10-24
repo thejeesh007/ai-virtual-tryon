@@ -107,6 +107,23 @@ Open [http://localhost:8000/](http://localhost:8000/) for the desktop app and [h
 
 Interactive API documentation is available at [http://localhost:8000/docs](http://localhost:8000/docs).
 
+## Garment draping with NVIDIA Warp
+
+The garment pipeline supports three engines: `simple` (the default in the web/API drape routes), `pbd` (this project's position-based dynamics solver, validated for tops), and `warp` (GarmentCode's NVIDIA Warp GPU cloth simulator). To use Warp, select `engine="warp"` when calling the garment-drape API. The UI's ordinary drape action currently uses `simple`; the pose robustness action uses `warp`.
+
+In Warp mode, the app first generates or loads the garment's sewing-pattern specification and design parameters, and exports the user's fitted SMPL body as a floor-aligned OBJ in meters. The Windows backend then launches `warp_drape_runner.py` through WSL2. That runner uses the full GarmentCode checkout and its compiled NVIDIA Warp fork to simulate the garment panels and seams against the exported body, including cloth behavior and body/self collision handling. The simulation output is returned to the backend, which computes garment-to-body distances and writes a colorized mesh for the viewer and fit heatmap. Fabric material settings feed the simulator; garment ease is built into the pattern dimensions during size calibration.
+
+Warp is a separate environment from the main Python virtual environment. On Windows, it requires WSL2, a GPU-capable Linux setup, the GarmentCode-compatible NVIDIA Warp fork and its dependencies built inside the WSL environment, and the full GarmentCode checkout there. The current bridge in `third_party/GarmentCode/dress_dataset/warp_drape.py` contains machine-specific WSL distro, conda Python, and checkout paths; update `WSL_DISTRO`, `WSL_CONDA_PYTHON`, and `WSL_GARMENTCODE_CLONE` for your machine before using it. The Linux checkout must include GarmentCode's simulation module, simulation assets, and `system.json` support. A generic `pip install warp-lang` alone does not provide this configured GarmentCode simulator. Without the WSL/GPU setup, use the `simple` engine; it is a geometric wrap-and-relax approximation rather than a Warp cloth simulation.
+
+## Multi-pose fit robustness
+
+The fit robustness check reuses the same person's SMPL shape and garment size, creates a newly posed body for each variation, and runs a separate drape simulation for each pose. It compares the per-pose fit labels and reports how many agree plus a High/Medium/Low agreement confidence. Each pose has its own avatar and draped garment mesh so the results can be inspected individually. This is a robustness check across several static poses, not one continuous animation or a motion simulation.
+
+- Tops: 3 poses total: the default arm angle and two small arm-angle variations.
+- Pants: 5 poses total: the default stance, two independent knee-bend variants, and two independent leg-spread variants. Knee bend and leg spread are tested separately.
+
+This check is opt-in because each additional Warp pose requires a full simulation and can take roughly 20–25 seconds on the configured GPU. The API exposes it at `/api/drape_pose_check` and `/api/session/{session_id}/drape_pose_check`; the web app calls it only when the fit robustness action is selected. It requires the Warp/WSL setup described above.
+
 ## Measurement pipeline and development commands
 
 These commands are optional if you only want to run the web app with a prepared `baseline_hgb.joblib` model. Run them from `backend/measurement/` with the virtual environment active:
